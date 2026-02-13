@@ -7,9 +7,9 @@ import json
 from datetime import datetime, timedelta
 
 # --- 1. CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="Victory Radar Peschici PRO", layout="wide")
+st.set_page_config(page_title="Victory Radar Peschici ULTIMATE", layout="wide")
 
-# --- 2. IL TUO LINK PIANO B ---
+# --- 2. LINK CLOUD PIANO B ---
 URL_SCRIPT_GOOGLE = "https://script.google.com/macros/s/AKfycbx7X-0P63XjFNEJ9lA_CHVLN-u0at_kxpEd-O5YSBi98sNvr9wsBmR7GNZqA0GSDgRa/exec"
 
 # --- 3. INIZIALIZZAZIONE ---
@@ -44,12 +44,13 @@ EVENTI_BASE = [
     {"m": 8, "s": 26, "e": 28, "n": "PESCHICI JAZZ", "w": 1.4},
 ]
 
-# --- 4. FUNZIONI DATI (CON CORREZIONE DATA) ---
+# --- 4. FUNZIONI DATI ---
 def carica_prenotazioni():
     try: 
         df = conn.read(worksheet="Prenotazioni", ttl=0)
         if not df.empty:
-            df['Data'] = df['Data'].astype(str).str.strip() # Pulisce spazi e forza testo
+            # NORMALIZZAZIONE DATA: Trasforma qualsiasi formato di Google in YYYY-MM-DD
+            df['Data'] = pd.to_datetime(df['Data']).dt.strftime('%Y-%m-%d')
         return df
     except: 
         return pd.DataFrame(columns=["Data", "Struttura", "Nome", "Tel", "Note", "Prezzo_Totale", "Acconto", "Saldo"])
@@ -86,24 +87,27 @@ def calcola_prezzo_strategico(giorno, mese, anno, info, df_e):
     if dt.weekday() >= 4: molt *= 1.15
     return int(info['base'] * molt), ev_oggi
 
-# --- 6. CSS ---
+# --- 6. CSS VICTORY ---
 st.markdown("""
     <style>
     .stApp { background-color: #f1f8e9; }
     .planning-container { overflow-x: auto; background: white; border-radius: 6px; border: 1px solid #a5d6a7; }
     table.victory-table { border-collapse: separate; width: 100%; font-family: 'Segoe UI', sans-serif; }
-    th, td { padding: 4px; text-align: center; border: 1px solid #eee; min-width: 95px; height: 65px; }
+    th, td { padding: 4px; text-align: center; border: 1px solid #eee; min-width: 95px; height: 65px; vertical-align: middle; }
     .sticky-col { position: sticky; left: 0; background: #2e7d32; color: white; font-weight: bold; min-width: 150px; z-index: 10; font-size: 11px; }
-    .cell-booked { background: #ffcdd2 !important; color: #b71c1c !important; font-weight: bold; font-size: 9px; border-left: 3px solid #d32f2f; }
+    .ev-1 { color: #f57f17; font-weight: bold; font-size: 9px; line-height: 1; }
+    .ev-2 { color: #8e44ad; font-weight: bold; font-size: 9px; border-top: 1px dashed #ddd; margin-top: 2px; }
+    .cell-booked { background: #ffcdd2 !important; color: #b71c1c !important; font-weight: bold; font-size: 9px; border-left: 3px solid #d32f2f; text-align: left; padding-left: 4px; }
     .info-price { font-size: 13px; color: #1b5e20; font-weight: 800; display: block; }
-    .info-market { font-size: 9px; color: #c62828; display: bold; }
+    .info-market { font-size: 9px; color: #c62828; display: block; font-weight: bold; }
+    .section-box { background: white; padding: 12px; border-radius: 8px; border: 1px solid #a5d6a7; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     header {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
 
 # --- 7. MAIN UI ---
 def main():
-    st.markdown(f"<h3 style='text-align:center;'>VICTORY RADAR PRO ONLINE</h3>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='text-align:center; color:#2e7d32;'>VICTORY RADAR PESCHICI - ONLINE PRO</h3>", unsafe_allow_html=True)
 
     n1, n2, n3 = st.columns([1, 8, 1])
     if n1.button("◀"): st.session_state.mese -= 1; st.rerun()
@@ -122,15 +126,18 @@ def main():
         html += f'<th style="background:{bg}">{d}</th>'
     html += '</tr></thead><tbody>'
 
-    # RIGA RADAR
+    # RIGA RADAR (DOPPI EVENTI)
     html += '<tr><td class="sticky-col" style="background:#fff9c4; color:#f57f17">📡 RADAR EVENTI</td>'
     for d in range(1, num_days + 1):
         _, evs = calcola_prezzo_strategico(d, st.session_state.mese, st.session_state.anno, {"base":100}, df_e)
-        txt = "".join([f'<div style="font-size:9px;">{ev["n"][:10]}</div>' for ev in evs[:2]])
+        txt = ""
+        for i, ev in enumerate(evs[:2]):
+            txt += f'<div class="ev-{i+1}">{ev["n"][:10]}</div>'
         html += f'<td style="background:#fff9c4;">{txt}</td>'
     html += '</tr>'
 
     for ns, info in STRUTTURE.items():
+        # Conflitti Melograno
         confl = []
         chk = CHILD_UNITS if ns == PARENT_UNIT else ([PARENT_UNIT] if ns in CHILD_UNITS else [])
         if not df_p.empty:
@@ -140,7 +147,6 @@ def main():
         for d in range(1, num_days + 1):
             k = f"{st.session_state.anno}-{st.session_state.mese:02d}-{d:02d}"
             
-            # Controllo Prenotazione
             is_booked = False
             nome_ospite = ""
             if not df_p.empty:
@@ -160,19 +166,46 @@ def main():
     st.markdown(html, unsafe_allow_html=True)
 
     # AZIONI
+    st.markdown("<br>", unsafe_allow_html=True)
     ca, cb, cc = st.columns(3)
+
+    with ca:
+        st.markdown('<div class="section-box">', unsafe_allow_html=True)
+        st.subheader("🚩 EVENTI")
+        with st.form("ev"):
+            en = st.text_input("Nome Evento")
+            c1, c2, c3 = st.columns(3); em = c1.number_input("M", 1, 12, st.session_state.mese); es = c2.number_input("In", 1, 31); ee = c3.number_input("Fi", 1, 31)
+            ew = st.slider("Peso", 1.0, 3.0, 1.5)
+            if st.form_submit_button("AGGIUNGI EVENTO"):
+                if salva_via_script([{"Nome": en, "Mese": em, "Inizio": es, "Fine": ee, "Peso": ew}]): st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with cb:
+        st.markdown('<div class="section-box">', unsafe_allow_html=True)
+        st.subheader("🚀 RADAR GOOGLE")
+        r1, r2 = st.columns(2); d1 = r1.date_input("Dal"); d2 = r2.date_input("Al")
+        if st.button("AVVIA SCANSIONE", use_container_width=True):
+            with st.spinner("Cercando..."):
+                tmp = d1
+                while tmp <= d2:
+                    st.session_state.market_prices[tmp.strftime("%Y-%m-%d")] = int(get_market_average(tmp.strftime("%Y-%m-%d")))
+                    tmp += timedelta(days=1)
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
     with cc:
+        st.markdown('<div class="section-box">', unsafe_allow_html=True)
+        st.subheader("📝 PRENOTA")
         with st.form("bk"):
-            st.subheader("📝 PRENOTA")
-            su = st.selectbox("Unità", MELOGRANO_UNITS); b1 = st.date_input("In"); b2 = st.date_input("Out")
+            su = st.selectbox("Unità", MELOGRANO_UNITS); bc1, bc2 = st.columns(2); b1 = bc1.date_input("In"); b2 = bc2.date_input("Out")
             nm = st.text_input("Nome"); tl = st.text_input("Tel"); nt = st.text_input("Note")
             notti = (b2-b1).days if (b2-b1).days > 0 else 1
             prz_s, _ = calcola_prezzo_strategico(b1.day, b1.month, st.session_state.anno, STRUTTURE[su], df_e)
-            pt = st.number_input("Totale (€)", value=float(prz_s * notti))
-            ac = st.number_input("Acconto (€)", value=0.0)
-            if st.form_submit_button("CONFERMA E SALVA"):
+            pt = st.number_input("Totale (€)", value=float(prz_s * notti)); ac = st.number_input("Acconto (€)", value=0.0)
+            st.write(f"**Saldo da incassare: {pt-ac} €**")
+            if st.form_submit_button("CONFERMA"):
                 nuove = [{"Data": (b1+timedelta(days=i)).strftime("%Y-%m-%d"), "Struttura": su, "Nome": nm, "Tel": tl, "Note": nt, "Prezzo_Totale": pt, "Acconto": ac, "Saldo": pt-ac} for i in range(notti)]
                 if salva_via_script(nuove): st.rerun()
-                else: st.error("Errore Script")
+        st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__": main()
