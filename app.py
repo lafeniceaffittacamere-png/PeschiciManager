@@ -209,37 +209,60 @@ def main():
     with c_del:
         st.subheader("🗑️ ELIMINA")
         
-        # --- NUOVA SEZIONE: LISTA INTELLIGENTE ---
-        # Filtriamo le prenotazioni del mese corrente per mostrarle nella lista
-        prenotazioni_mese = pd.DataFrame()
-        if not df_p.empty and 'Data' in df_p.columns:
-            mask = df_p['Data'].str.contains(f"{st.session_state.anno}-{st.session_state.mese:02d}")
-            prenotazioni_mese = df_p[mask].sort_values(by="Data")
-        
-        if not prenotazioni_mese.empty:
-            # Creiamo una lista di stringhe leggibili "DATA | STRUTTURA | OSPITE"
-            opzioni_cancellazione = []
-            for idx, row in prenotazioni_mese.iterrows():
-                label = f"{row['Data']} | {row['Struttura']} | {row['Nome']}"
-                opzioni_cancellazione.append(label)
+        # --- RAGGRUPPAMENTO PRENOTAZIONI PER CANCELLAZIONE RAPIDA ---
+        if not df_p.empty and 'Data' in df_p.columns and 'Nome' in df_p.columns:
+            # 1. Filtriamo solo le prenotazioni future o del mese corrente
+            df_view = df_p.sort_values(by=['Struttura', 'Data'])
             
-            # Selectbox per scegliere COSA cancellare
-            selezione = st.selectbox("Scegli prenotazione da cancellare:", opzioni_cancellazione)
+            # 2. Creiamo un dizionario per raggruppare: Chiave = Nome+Struttura
+            gruppi = {}
+            for _, row in df_view.iterrows():
+                key = f"{row['Nome']} - {row['Struttura']}"
+                if key not in gruppi:
+                    gruppi[key] = []
+                gruppi[key].append(row['Data'])
             
-            if st.button("ELIMINA SELEZIONATA", type="primary"):
-                # Estrarre i dati dalla stringa selezionata
-                parti = selezione.split(" | ")
-                data_da_canc = parti[0]
-                struttura_da_canc = parti[1]
+            # 3. Creiamo le opzioni del menu: "Nome - Struttura (Dal... Al...)"
+            opzioni_menu = []
+            # Mappa per recuperare le date dalla scelta dell'utente
+            mappa_date = {} 
+            
+            for key, date_list in gruppi.items():
+                date_list.sort()
+                start = date_list[0]
+                end = date_list[-1]
+                label = f"{key} | Dal {start} al {end} ({len(date_list)} notti)"
+                opzioni_menu.append(label)
+                # Salviamo struttura e lista date per l'eliminazione
+                nome, struttura = key.split(" - ")
+                mappa_date[label] = {"struttura": struttura, "date": date_list}
+            
+            if opzioni_menu:
+                scelta = st.selectbox("Seleziona il gruppo da cancellare:", opzioni_menu)
                 
-                if invia_al_cloud({"action": "DELETE", "date": data_da_canc, "structure": struttura_da_canc}):
-                    with st.spinner("Cancellazione Cloud... (3s)"):
-                        time.sleep(3)
-                        st.cache_data.clear()
-                    st.success("✅ Cancellato!")
+                if st.button("ELIMINA PRENOTAZIONE COMPLETA", type="primary"):
+                    dati_da_canc = mappa_date[scelta]
+                    struttura_target = dati_da_canc["struttura"]
+                    lista_date = dati_da_canc["date"]
+                    
+                    # Barra di progresso
+                    progresso = st.progress(0)
+                    totale = len(lista_date)
+                    
+                    for i, giorno in enumerate(lista_date):
+                        # Chiama il server per ogni singolo giorno
+                        invia_al_cloud({"action": "DELETE", "date": giorno, "structure": struttura_target})
+                        progresso.progress((i + 1) / totale)
+                        time.sleep(0.5) # Piccolo respiro per non intasare Google
+                    
+                    st.success(f"✅ Cancellate {totale} notti con successo!")
+                    time.sleep(1)
+                    st.cache_data.clear()
                     st.rerun()
+            else:
+                st.info("Nessuna prenotazione trovata.")
         else:
-            st.info("Nessuna prenotazione in questo mese.")
+            st.info("Nessun dato disponibile.")
 
     with st.expander("🔍 DEBUG: DATI NEL CLOUD"):
         st.dataframe(df_p)
