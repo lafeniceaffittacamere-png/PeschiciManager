@@ -163,15 +163,28 @@ st.markdown("""
 def main():
     st.markdown(f"<h3 style='text-align:center; color:#2e7d32;'>VICTORY RADAR PRO</h3>", unsafe_allow_html=True)
 
-    if st.button("🔄 AGGIORNA DATI (Clicca se non vedi modifiche)"):
+    if st.button("🔄 AGGIORNA DATI"):
         st.cache_data.clear()
         st.rerun()
 
-    # Navigazione Mesi
+    # --- NAVIGAZIONE MESI (CORRETTA) ---
     c1, c2, c3 = st.columns([1, 6, 1])
-    if c1.button("◀"): st.session_state.mese -= 1; st.rerun()
+    
+    if c1.button("◀"): 
+        st.session_state.mese -= 1
+        if st.session_state.mese < 1: # Se va sotto Gennaio
+            st.session_state.mese = 12 # Torna a Dicembre
+            st.session_state.anno -= 1 # Dell'anno prima
+        st.rerun()
+        
     c2.markdown(f"<h4 style='text-align:center; margin:0;'>{calendar.month_name[st.session_state.mese].upper()} {st.session_state.anno}</h4>", unsafe_allow_html=True)
-    if c3.button("▶"): st.session_state.mese += 1; st.rerun()
+    
+    if c3.button("▶"): 
+        st.session_state.mese += 1
+        if st.session_state.mese > 12: # Se va oltre Dicembre
+            st.session_state.mese = 1 # Torna a Gennaio
+            st.session_state.anno += 1 # Dell'anno dopo
+        st.rerun()
 
     df_p = carica_prenotazioni()
     num_days = calendar.monthrange(st.session_state.anno, st.session_state.mese)[1]
@@ -278,7 +291,9 @@ def main():
             mappa_date = {} 
             for key, date_list in gruppi.items():
                 date_list.sort()
-                label = f"{key} ({len(date_list)} notti)"
+                start = date_list[0]
+                end = date_list[-1]
+                label = f"{key} | {start} -> {end} ({len(date_list)} notti)"
                 opzioni_menu.append(label)
                 nome, struttura = key.split(" - ")
                 mappa_date[label] = {"struttura": struttura, "date": date_list}
