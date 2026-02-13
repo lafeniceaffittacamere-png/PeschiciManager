@@ -5,18 +5,24 @@ import pandas as pd
 import requests
 import json
 from datetime import datetime, timedelta
+import time
 
 # --- 1. CONFIGURAZIONE ---
 st.set_page_config(page_title="Victory Radar Peschici ULTIMATE", layout="wide")
 
-# IL TUO URL DI GOOGLE SCRIPT (Già inserito)
+# --- 2. CONTROLLO MODIFICA (OROLOGIO) ---
+# Questo blocco serve a capire se stiamo vedendo la versione nuova
+orario_attuale = datetime.now().strftime("%H:%M:%S")
+st.error(f"⚠️ VERSIONE DI PROVA - ORA DEL SERVER: {orario_attuale} (Se questo orario cambia aggiornando, il codice è NUOVO)")
+
+# IL TUO URL DI GOOGLE SCRIPT
 URL_SCRIPT_GOOGLE = "https://script.google.com/macros/s/AKfycby0mE0ltg7MMQlwUb-jPmLuuUD-raHRLLV1vW7wJjk8VpJZIftWZ-M8Beuvwkrf5cROKA/exec"
 
-# --- 2. INIZIALIZZAZIONE ---
+# --- 3. INIZIALIZZAZIONE ---
 if 'anno' not in st.session_state: st.session_state.anno = 2026
 if 'mese' not in st.session_state: st.session_state.mese = 2
 
-# Connessione per LETTURA VELOCE (Streamlit -> Google Sheets)
+# Connessione per LETTURA VELOCE
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 STRUTTURE = {
@@ -43,25 +49,22 @@ EVENTI_BASE = [
     {"m": 8, "s": 26, "e": 28, "n": "PESCHICI JAZZ", "w": 1.4},
 ]
 
-# --- 3. FUNZIONI DATI ---
+# --- 4. FUNZIONI DATI ---
 def carica_prenotazioni():
     try: 
-        # Legge dalla linguetta "Prenotazioni" usando la cache minima (ttl=0)
+        # Forziamo la pulizia della cache
+        st.cache_data.clear()
         df = conn.read(worksheet="Prenotazioni", ttl=0)
         if df is not None and not df.empty:
-            # Pulisce i nomi delle colonne
             df.columns = [c.strip() for c in df.columns]
-            # Normalizza le date
             df['Data'] = pd.to_datetime(df['Data'], errors='coerce').dt.strftime('%Y-%m-%d')
             df['Struttura'] = df['Struttura'].astype(str).str.strip()
-            # Rimuove righe vuote o sporche
             df = df.dropna(subset=['Data', 'Struttura'])
         return df
     except Exception as e:
         return pd.DataFrame(columns=["Data", "Struttura", "Nome", "Tel", "Note", "Prezzo_Totale", "Acconto", "Saldo"])
 
 def invia_al_cloud(payload):
-    """Invia i dati allo script Google per salvare o eliminare"""
     try: 
         headers = {'Content-Type': 'application/json'}
         response = requests.post(URL_SCRIPT_GOOGLE, data=json.dumps(payload), headers=headers)
@@ -85,7 +88,7 @@ def calcola_prezzo_strategico(giorno, mese, anno, info):
     if dt.weekday() >= 4: molt *= 1.15
     return int(info['base'] * molt), ev_oggi
 
-# --- 4. STILE CSS ---
+# --- 5. STILE CSS ---
 st.markdown("""
     <style>
     .stApp { background-color: #f1f8e9; }
@@ -100,7 +103,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 5. INTERFACCIA ---
+# --- 6. INTERFACCIA ---
 def main():
     st.markdown(f"<h3 style='text-align:center; color:#2e7d32;'>VICTORY RADAR PRO</h3>", unsafe_allow_html=True)
 
@@ -114,7 +117,7 @@ def main():
     num_days = calendar.monthrange(st.session_state.anno, st.session_state.mese)[1]
 
     # TABELLA PLANNING
-    html = '<div class="planning-container"><table><thead><tr><th class="sticky-col">STRUTTURE</th>'
+    html = '<div class="planning-container"><table><thead><tr><th class="sticky-col">STRUTTURA</th>'
     for d in range(1, num_days + 1):
         dt_t = datetime(st.session_state.anno, st.session_state.mese, d)
         bg = "#c8e6c9" if dt_t.weekday() >= 5 else "#e8f5e9"
@@ -135,7 +138,6 @@ def main():
         conflitti = []
         chk_units = CHILD_UNITS if ns == PARENT_UNIT else ([PARENT_UNIT] if ns in CHILD_UNITS else [])
         if not df_p.empty:
-            # Filtra solo i conflitti rilevanti
             conflitti = df_p[df_p['Struttura'].isin(chk_units)]['Data'].tolist()
 
         html += f'<tr><td class="sticky-col">{ns}</td>'
@@ -165,15 +167,13 @@ def main():
             su = st.selectbox("Unità", list(STRUTTURE.keys())); b1 = st.date_input("In"); b2 = st.date_input("Out")
             nm = st.text_input("Nome"); tl = st.text_input("Tel"); nt = st.text_input("Note")
             
-            # Calcolo preventivo
             notti = (b2-b1).days if (b2-b1).days > 0 else 1
             prz_s, _ = calcola_prezzo_strategico(b1.day, b1.month, st.session_state.anno, STRUTTURE[su])
-            totale_calcolato = float(prz_s * notti)
+            tot_calc = float(prz_s * notti)
             
-            pt = st.number_input("Totale", value=totale_calcolato); ac = st.number_input("Acconto", value=0.0)
+            pt = st.number_input("Totale", value=tot_calc); ac = st.number_input("Acconto", value=0.0)
             
             if st.form_submit_button("SALVA SU CLOUD"):
-                # Creiamo una lista di giorni da prenotare
                 nuove = []
                 for i in range(notti):
                     giorno = (b1 + timedelta(days=i)).strftime("%Y-%m-%d")
@@ -189,6 +189,8 @@ def main():
                     })
                 
                 if invia_al_cloud(nuove): 
+                    time.sleep(1) # Aspetta un secondo per sicurezza
+                    st.cache_data.clear() # Pulisce la memoria per vedere subito la modifica
                     st.success("✅ Prenotazione Salvata!")
                     st.rerun()
 
@@ -199,10 +201,11 @@ def main():
         del_struct = st.selectbox("Unità da liberare", list(STRUTTURE.keys()), key="del_selectbox")
         if st.button("ELIMINA DEFINITIVAMENTE", type="primary"):
             if invia_al_cloud({"action": "DELETE", "date": del_date.strftime("%Y-%m-%d"), "structure": del_struct}):
+                time.sleep(1)
+                st.cache_data.clear()
                 st.success("✅ Cancellazione effettuata!")
                 st.rerun()
 
-    # DEBUG RAPIDO (Opzionale, puoi rimuoverlo se vuoi)
     with st.expander("Vedi dati grezzi"):
         st.dataframe(df_p)
 
