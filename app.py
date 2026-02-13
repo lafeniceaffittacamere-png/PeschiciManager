@@ -1,27 +1,36 @@
 import streamlit as st
-import pandas as pd
+from streamlit_gsheets import GSheetsConnection
 import calendar
+import pandas as pd
+import requests
+import json
 from datetime import datetime, timedelta
 
 # --- 1. CONFIGURAZIONE ---
-st.set_page_config(page_title="Victory Radar Peschici (Direct)", layout="wide")
+st.set_page_config(page_title="Victory Radar Peschici ULTIMATE", layout="wide")
 
-# Link DIRETTO al foglio (senza passare dai Secrets)
-SHEET_ID = "1I34jTQs-qVlwqkoeUsXpHhzNBiZTLwvAVjmmjs_My-o"
-# Questo URL scarica i dati direttamente in formato CSV
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
+# IL TUO URL DI GOOGLE SCRIPT (Già inserito)
+URL_SCRIPT_GOOGLE = "https://script.google.com/macros/s/AKfycby0mE0ltg7MMQlwUb-jPmLuuUD-raHRLLV1vW7wJjk8VpJZIftWZ-M8Beuvwkrf5cROKA/exec"
 
+# --- 2. INIZIALIZZAZIONE ---
 if 'anno' not in st.session_state: st.session_state.anno = 2026
 if 'mese' not in st.session_state: st.session_state.mese = 2
 
-# --- 2. COSTANTI ---
+# Connessione per LETTURA VELOCE (Streamlit -> Google Sheets)
+conn = st.connection("gsheets", type=GSheetsConnection)
+
 STRUTTURE = {
-    "Il Melograno (VILLA)": {"base": 100}, "Il Melograno (SUITE)": {"base": 60},
-    "Il Melograno (FAMILY)": {"base": 75}, "Hotel Peschici": {"base": 110},
-    "Residenza Il Dragone": {"base": 150}, "B&B La Sorgente": {"base": 85},
-    "Suite Vista Trabucco": {"base": 220}, "Camping Int. Peschici": {"base": 55},
-    "Case Bianche Centro": {"base": 95}
+    "Il Melograno (VILLA)":       {"base": 100},
+    "Il Melograno (SUITE)":       {"base": 60},
+    "Il Melograno (FAMILY)":      {"base": 75},
+    "Hotel Peschici":             {"base": 110},
+    "Residenza Il Dragone":       {"base": 150},
+    "B&B La Sorgente":            {"base": 85},
+    "Suite Vista Trabucco":       {"base": 220},
+    "Camping Int. Peschici":      {"base": 55},
+    "Case Bianche Centro":        {"base": 95}
 }
+
 PARENT_UNIT = "Il Melograno (VILLA)"
 CHILD_UNITS = ["Il Melograno (SUITE)", "Il Melograno (FAMILY)"]
 
@@ -34,92 +43,167 @@ EVENTI_BASE = [
     {"m": 8, "s": 26, "e": 28, "n": "PESCHICI JAZZ", "w": 1.4},
 ]
 
-# --- 3. FUNZIONI DATI (Metodo Diretto) ---
+# --- 3. FUNZIONI DATI ---
 def carica_prenotazioni():
-    try:
-        # Legge direttamente dal link pubblico - ZERO ERRORI DI CONFIGURAZIONE
-        df = pd.read_csv(CSV_URL)
-        # Pulizia nomi colonne per sicurezza
-        df.columns = df.columns.str.strip()
+    try: 
+        # Legge dalla linguetta "Prenotazioni" usando la cache minima (ttl=0)
+        df = conn.read(worksheet="Prenotazioni", ttl=0)
+        if df is not None and not df.empty:
+            # Pulisce i nomi delle colonne
+            df.columns = [c.strip() for c in df.columns]
+            # Normalizza le date
+            df['Data'] = pd.to_datetime(df['Data'], errors='coerce').dt.strftime('%Y-%m-%d')
+            df['Struttura'] = df['Struttura'].astype(str).str.strip()
+            # Rimuove righe vuote o sporche
+            df = df.dropna(subset=['Data', 'Struttura'])
         return df
     except Exception as e:
-        # Se il foglio è vuoto o irraggiungibile
         return pd.DataFrame(columns=["Data", "Struttura", "Nome", "Tel", "Note", "Prezzo_Totale", "Acconto", "Saldo"])
+
+def invia_al_cloud(payload):
+    """Invia i dati allo script Google per salvare o eliminare"""
+    try: 
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(URL_SCRIPT_GOOGLE, data=json.dumps(payload), headers=headers)
+        if response.status_code == 200:
+            return True
+        else:
+            st.error(f"Errore dal server: {response.text}")
+            return False
+    except Exception as e: 
+        st.error(f"Errore di comunicazione: {e}")
+        return False
 
 def calcola_prezzo_strategico(giorno, mese, anno, info):
     dt = datetime(anno, mese, giorno)
     molt = 1.0
     if mese == 8: molt = 2.4
     elif mese == 7: molt = 1.7
+    elif mese in [6, 9]: molt = 1.2
     ev_oggi = [e for e in EVENTI_BASE if e['m'] == mese and e['s'] <= giorno <= e['e']]
     if ev_oggi: molt = max(molt, max([e['w'] for e in ev_oggi]))
     if dt.weekday() >= 4: molt *= 1.15
     return int(info['base'] * molt), ev_oggi
 
-# --- 4. CSS ---
+# --- 4. STILE CSS ---
 st.markdown("""
     <style>
     .stApp { background-color: #f1f8e9; }
     .planning-container { overflow-x: auto; background: white; border: 1px solid #a5d6a7; border-radius: 8px; }
-    table { border-collapse: collapse; width: 100%; font-family: sans-serif; }
-    th, td { border: 1px solid #eee; min-width: 90px; height: 60px; text-align: center; font-size: 11px; }
-    .sticky-col { position: sticky; left: 0; background: #2e7d32; color: white; font-weight: bold; min-width: 160px; z-index: 5; text-align: left; padding-left: 10px; }
-    .booked { background: #ffcdd2 !important; color: #b71c1c; font-weight: bold; border: 1px solid #ef9a9a !important; }
-    .locked { background: #f5f5f5 !important; color: #bdbdbd; font-style: italic; }
-    .price-tag { color: #2e7d32; font-weight: 800; font-size: 13px; }
-    .event-tag { color: #f57f17; font-size: 9px; font-weight: bold; display: block; }
+    table { border-collapse: separate; width: 100%; border-spacing: 0; }
+    th, td { padding: 4px; text-align: center; border: 1px solid #eee; min-width: 95px; height: 60px; vertical-align: middle; font-size: 11px; }
+    .sticky-col { position: sticky; left: 0; background: #2e7d32; color: white; font-weight: bold; min-width: 160px; z-index: 10; text-align: left; padding-left: 8px; }
+    .cell-booked { background: #ffcdd2 !important; color: #b71c1c !important; font-weight: bold; border-left: 5px solid #d32f2f !important; }
+    .cell-locked { background: #eeeeee !important; color: #bdbdbd; font-style: italic; }
+    .ev-tag { color: #f57f17; font-weight: bold; font-size: 9px; display: block; }
+    .price-tag { font-size: 13px; color: #1b5e20; font-weight: 800; }
     </style>
 """, unsafe_allow_html=True)
 
 # --- 5. INTERFACCIA ---
 def main():
-    st.markdown("<h1 style='text-align:center; color:#2e7d32;'>VICTORY RADAR PESCHICI (Mod. Diretto)</h1>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='text-align:center; color:#2e7d32;'>VICTORY RADAR PRO</h3>", unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns([1, 2, 1])
-    if c1.button("◀"): st.session_state.mese -= 1; st.rerun()
-    c2.markdown(f"<h2 style='text-align:center;'>{calendar.month_name[st.session_state.mese].upper()} {st.session_state.anno}</h2>", unsafe_allow_html=True)
-    if c3.button("▶"): st.session_state.mese += 1; st.rerun()
+    # Navigazione
+    n1, n2, n3 = st.columns([1, 8, 1])
+    if n1.button("◀"): st.session_state.mese -= 1; st.rerun()
+    n2.markdown(f"<h4 style='text-align:center;'>{calendar.month_name[st.session_state.mese].upper()} {st.session_state.anno}</h4>", unsafe_allow_html=True)
+    if n3.button("▶"): st.session_state.mese += 1; st.rerun()
 
     df_p = carica_prenotazioni()
     num_days = calendar.monthrange(st.session_state.anno, st.session_state.mese)[1]
 
-    # TABELLA
-    html = '<div class="planning-container"><table><thead><tr><th class="sticky-col">STRUTTURA</th>'
+    # TABELLA PLANNING
+    html = '<div class="planning-container"><table><thead><tr><th class="sticky-col">STRUTTURE</th>'
     for d in range(1, num_days + 1):
         dt_t = datetime(st.session_state.anno, st.session_state.mese, d)
-        bg = "#c8e6c9" if dt_t.weekday() >= 5 else "#fff"
+        bg = "#c8e6c9" if dt_t.weekday() >= 5 else "#e8f5e9"
         html += f'<th style="background:{bg}">{d}<br>{dt_t.strftime("%a")}</th>'
     html += '</tr></thead><tbody>'
 
+    # Righe Radar Eventi
+    html += '<tr><td class="sticky-col" style="background:#fff9c4; color:#f57f17">📡 RADAR EVENTI</td>'
+    for d in range(1, num_days + 1):
+        _, evs = calcola_prezzo_strategico(d, st.session_state.mese, st.session_state.anno, {"base":100})
+        txt = "".join([f'<span class="ev-tag">{ev["n"][:8]}</span>' for ev in evs])
+        html += f'<td style="background:#fff9c4;">{txt}</td>'
+    html += '</tr>'
+
+    # Righe Strutture
     for ns, info in STRUTTURE.items():
-        target = CHILD_UNITS if ns == PARENT_UNIT else ([PARENT_UNIT] if ns in CHILD_UNITS else [])
-        blocked = []
-        if not df_p.empty and 'Struttura' in df_p.columns and 'Data' in df_p.columns:
-            blocked = df_p[df_p['Struttura'].astype(str).isin(target)]['Data'].astype(str).tolist()
+        # Logica Villa vs Suite
+        conflitti = []
+        chk_units = CHILD_UNITS if ns == PARENT_UNIT else ([PARENT_UNIT] if ns in CHILD_UNITS else [])
+        if not df_p.empty:
+            # Filtra solo i conflitti rilevanti
+            conflitti = df_p[df_p['Struttura'].isin(chk_units)]['Data'].tolist()
 
         html += f'<tr><td class="sticky-col">{ns}</td>'
         for d in range(1, num_days + 1):
             k = f"{st.session_state.anno}-{st.session_state.mese:02d}-{d:02d}"
-            # Controllo esistenza dati
-            res = pd.DataFrame()
-            if not df_p.empty and 'Data' in df_p.columns:
-                res = df_p[(df_p['Data'].astype(str) == k) & (df_p['Struttura'] == ns)]
+            m = df_p[(df_p['Data'] == k) & (df_p['Struttura'] == ns)] if not df_p.empty else pd.DataFrame()
 
-            if k in blocked:
-                html += '<td class="locked">🔒</td>'
-            elif not res.empty:
-                nome = str(res.iloc[0]["Nome"])[:10].upper()
-                html += f'<td class="booked">{nome}</td>'
+            if k in conflitti: 
+                html += '<td class="cell-locked">🔒</td>'
+            elif not m.empty:
+                nome_c = str(m.iloc[0]["Nome"]).upper()[:9]
+                html += f'<td class="cell-booked">{nome_c}</td>'
             else:
-                p, evs = calcola_prezzo_strategico(d, st.session_state.mese, st.session_state.anno, info)
-                ev_txt = f'<span class="event-tag">{" ".join([e["n"][:6] for e in evs])}</span>' if evs else ""
-                html += f'<td><span class="price-tag">€{p}</span>{ev_txt}</td>'
+                prz, _ = calcola_prezzo_strategico(d, st.session_state.mese, st.session_state.anno, info)
+                html += f'<td><span class="price-tag">€{prz}</span></td>'
         html += '</tr>'
-    
-    st.markdown(html + '</tbody></table></div>', unsafe_allow_html=True)
-    
-    st.divider()
-    st.info("ℹ️ In questa modalità 'Diretta', puoi vedere le prenotazioni che aggiungi manualmente nel file Google Sheets. Per riattivare il salvataggio automatico da qui, dobbiamo sistemare i Secrets con calma.")
+    html += '</tbody></table></div>'
+    st.markdown(html, unsafe_allow_html=True)
 
-if __name__ == "__main__":
-    main()
+    # AZIONI
+    st.divider()
+    c_book, c_del = st.columns(2)
+    
+    with c_book:
+        with st.form("bk"):
+            st.subheader("📝 PRENOTA")
+            su = st.selectbox("Unità", list(STRUTTURE.keys())); b1 = st.date_input("In"); b2 = st.date_input("Out")
+            nm = st.text_input("Nome"); tl = st.text_input("Tel"); nt = st.text_input("Note")
+            
+            # Calcolo preventivo
+            notti = (b2-b1).days if (b2-b1).days > 0 else 1
+            prz_s, _ = calcola_prezzo_strategico(b1.day, b1.month, st.session_state.anno, STRUTTURE[su])
+            totale_calcolato = float(prz_s * notti)
+            
+            pt = st.number_input("Totale", value=totale_calcolato); ac = st.number_input("Acconto", value=0.0)
+            
+            if st.form_submit_button("SALVA SU CLOUD"):
+                # Creiamo una lista di giorni da prenotare
+                nuove = []
+                for i in range(notti):
+                    giorno = (b1 + timedelta(days=i)).strftime("%Y-%m-%d")
+                    nuove.append({
+                        "Data": giorno, 
+                        "Struttura": su, 
+                        "Nome": nm, 
+                        "Tel": tl, 
+                        "Note": nt, 
+                        "Prezzo_Totale": pt, 
+                        "Acconto": ac, 
+                        "Saldo": pt-ac
+                    })
+                
+                if invia_al_cloud(nuove): 
+                    st.success("✅ Prenotazione Salvata!")
+                    st.rerun()
+
+    with c_del:
+        st.subheader("🗑️ ELIMINA")
+        st.warning("Seleziona Giorno e Struttura da liberare")
+        del_date = st.date_input("Giorno da liberare")
+        del_struct = st.selectbox("Unità da liberare", list(STRUTTURE.keys()), key="del_selectbox")
+        if st.button("ELIMINA DEFINITIVAMENTE", type="primary"):
+            if invia_al_cloud({"action": "DELETE", "date": del_date.strftime("%Y-%m-%d"), "structure": del_struct}):
+                st.success("✅ Cancellazione effettuata!")
+                st.rerun()
+
+    # DEBUG RAPIDO (Opzionale, puoi rimuoverlo se vuoi)
+    with st.expander("Vedi dati grezzi"):
+        st.dataframe(df_p)
+
+if __name__ == "__main__": main()
