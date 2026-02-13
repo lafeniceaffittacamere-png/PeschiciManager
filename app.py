@@ -1,22 +1,15 @@
 import streamlit as st
-import pandas as pd
 
-st.set_page_config(page_title="Victory Radar - Connessione Finale")
-
-st.title("🔗 Test Connessione Supabase")
+st.title("Controllo Motore Victory Radar")
 
 try:
-    # Stabiliamo la connessione
-    conn = st.connection('postgresql', type='sql', ttl=0)
-    
-    # Query di test
-    df = conn.query("SELECT 'Siamo online!' as status", ttl=0)
-    
-    st.success("✅ CE L'ABBIAMO FATTA!")
+    # Proviamo a connetterci usando solo la URL dei secrets
+    conn = st.connection("postgresql", type="sql")
+    df = conn.query("SELECT 1", ttl=0)
     st.balloons()
-    st.write(df)
-    
+    st.success("CE L'ABBIAMO FATTA! Il motore è acceso.")
+    st.info("Ora posso ricaricare tutto il tuo calendario.")
 except Exception as e:
-    st.error("❌ Errore di connessione")
-    st.info("Controlla di aver usato l'HOST del POOLER (porta 6543) e non quello diretto.")
-    st.code(str(e))
+    st.error("Il database non risponde ancora.")
+    st.write("Errore riscontrato:", e)
+    st.warning("Luigi, se non va nemmeno così, non preoccuparti. Cambiamo metodo e usiamo un file Excel su GitHub come database, che è a prova di errore!")
