@@ -9,7 +9,7 @@ import time
 # --- 1. CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="Victory Radar Peschici ULTIMATE", layout="wide")
 
-# --- 2. COSTANTI DI CONNESSIONE (MOTORE NUOVO) ---
+# --- 2. COSTANTI DI CONNESSIONE ---
 # Script per SCRIVERE ed ELIMINARE
 URL_SCRIPT_GOOGLE = "https://script.google.com/macros/s/AKfycby0mE0ltg7MMQlwUb-jPmLuuUD-raHRLLV1vW7wJjk8VpJZIftWZ-M8Beuvwkrf5cROKA/exec"
 
@@ -17,7 +17,7 @@ URL_SCRIPT_GOOGLE = "https://script.google.com/macros/s/AKfycby0mE0ltg7MMQlwUb-j
 SHEET_ID = "1I34jTQs-qVlwqkoeUsXpHhzNBiZTLwvAVjmmjs_My-o"
 URL_LETTURA_DIRETTA = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Prenotazioni"
 
-# API Key per Google Hotels (Mantenuta dal tuo codice)
+# API Key per Google Hotels
 API_KEY = "1eefd886de298c71a9832a62837c0adb7ddc471ee28ded6ce24d9682f39c4ee1" 
 
 # --- 3. INIZIALIZZAZIONE ---
@@ -49,16 +49,15 @@ EVENTI_BASE = [
     {"m": 8, "s": 26, "e": 28, "n": "PESCHICI JAZZ", "w": 1.4},
 ]
 
-# --- 4. FUNZIONI DATI (VERSIONE BLINDATA ANTI-CACHE) ---
+# --- 4. FUNZIONI DATI ---
 def carica_prenotazioni():
     try:
-        # Trucco del timestamp per forzare il download fresco
         timestamp = int(time.time())
         df = pd.read_csv(f"{URL_LETTURA_DIRETTA}&v={timestamp}")
         
         if df is not None and not df.empty:
             df.columns = [c.strip() for c in df.columns]
-            df.rename(columns=lambda x: x.capitalize(), inplace=True) # Normalizza nomi colonne
+            df.rename(columns=lambda x: x.capitalize(), inplace=True) 
             
             if 'Data' in df.columns and 'Struttura' in df.columns:
                 df['Data'] = pd.to_datetime(df['Data'], errors='coerce').dt.strftime('%Y-%m-%d')
@@ -88,7 +87,7 @@ def calcola_prezzo_strategico(giorno, mese, anno, info):
     return int(info['base'] * molt), ev_oggi
 
 def get_market_average(date_str):
-    # Funzione originale per Google Hotels
+    # Logica SerpApi
     params = {"engine": "google_hotels", "q": "hotel peschici foggia", "check_in_date": date_str, "api_key": API_KEY}
     try:
         res = requests.get("https://serpapi.com/search", params=params, timeout=5).json()
@@ -96,7 +95,7 @@ def get_market_average(date_str):
         return int(sum(prezzi) / len(prezzi)) if prezzi else 95
     except: return 95
 
-# --- 5. CSS (IL TUO CSS ORIGINALE) ---
+# --- 5. CSS ---
 st.markdown("""
     <style>
     .stApp { background-color: #f1f8e9; }
@@ -118,7 +117,6 @@ st.markdown("""
 def main():
     st.markdown(f"<h3 style='text-align:center; color:#2e7d32;'>VICTORY RADAR PRO (Google Connected)</h3>", unsafe_allow_html=True)
 
-    # Pulsante Forza Aggiornamento
     if st.button("🔄 AGGIORNA DATI"):
         st.cache_data.clear()
         st.rerun()
@@ -179,11 +177,18 @@ def main():
     
     with c_radar:
         st.subheader("🚀 RADAR GOOGLE")
+        # RIPRISTINATE LE DATE DI SCANSIONE COME RICHIESTO
+        scan_start = st.date_input("Dal", value=datetime(st.session_state.anno, st.session_state.mese, 1))
+        scan_end = st.date_input("Al", value=datetime(st.session_state.anno, st.session_state.mese, 1) + timedelta(days=6))
+        
         if st.button("SCANSIONA PREZZI"):
-            with st.spinner("Scansione Google Hotels in corso..."):
-                for d in range(1, num_days + 1):
-                    ds = f"{st.session_state.anno}-{st.session_state.mese:02d}-{d:02d}"
+            with st.spinner(f"Analisi mercato dal {scan_start} al {scan_end}..."):
+                delta = (scan_end - scan_start).days
+                for i in range(delta + 1):
+                    giorno = scan_start + timedelta(days=i)
+                    ds = giorno.strftime("%Y-%m-%d")
                     st.session_state.market_prices[ds] = get_market_average(ds)
+                st.success("Scansione Completata!")
                 st.rerun()
 
     with c_book:
@@ -203,7 +208,7 @@ def main():
                 
                 if invia_al_cloud(nuove): 
                     with st.spinner("Sincronizzazione Cloud... (3s)"):
-                        time.sleep(3) # Pausa tecnica per Google
+                        time.sleep(3) 
                         st.cache_data.clear()
                     st.success("✅ Salvato!")
                     st.rerun()
@@ -219,7 +224,6 @@ def main():
                 st.success("✅ Cancellato!")
                 st.rerun()
 
-    # DEBUG FINALE
     with st.expander("🔍 DEBUG: DATI NEL CLOUD"):
         st.dataframe(df_p)
 
