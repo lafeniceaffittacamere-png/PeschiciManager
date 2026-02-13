@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import time
 
 # --- 1. CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="Victory Radar Peschici 2026", layout="wide")
+st.set_page_config(page_title="Victory Radar Peschici ULTIMATE", layout="wide")
 
 # --- 2. COSTANTI DI CONNESSIONE ---
 # Script Google (Scrittura/Eliminazione)
@@ -38,26 +38,31 @@ STRUTTURE = {
 PARENT_UNIT = "Il Melograno (VILLA)"
 CHILD_UNITS = ["Il Melograno (SUITE)", "Il Melograno (FAMILY)"]
 
-# --- CALENDARIO EVENTI 2026 (AGGIORNATO) ---
+# --- CALENDARIO EVENTI COMPLETO (MIX 2026 + STORICI) ---
 EVENTI_BASE = [
-    # Primavera & Ponti
+    # PRIMAVERA
     {"m": 4, "s": 4,  "e": 6,  "n": "PASQUA 2026", "w": 1.8},
     {"m": 4, "s": 24, "e": 26, "n": "PONTE 25 APRILE", "w": 1.5},
     {"m": 5, "s": 1,  "e": 3,  "n": "PONTE 1 MAGGIO", "w": 1.5},
+    
+    # GIUGNO
     {"m": 6, "s": 1,  "e": 2,  "n": "PONTE 2 GIUGNO", "w": 1.4},
-    # Giugno
     {"m": 6, "s": 13, "e": 14, "n": "S.ANTONIO", "w": 1.3},
     {"m": 6, "s": 20, "e": 21, "n": "TRIATHLON", "w": 1.5},
-    # Luglio
-    {"m": 7, "s": 4,  "e": 5,  "n": "NOTTE ROSA", "w": 1.6},
+    
+    # LUGLIO
+    {"m": 7, "s": 4,  "e": 5,  "n": "ZAIANA OPEN / NOTTE ROSA", "w": 1.6}, # Eventi inizio luglio
     {"m": 7, "s": 11, "e": 12, "n": "FESTA DEL MARE", "w": 1.4},
-    {"m": 7, "s": 19, "e": 21, "n": "SANT'ELIA", "w": 2.5}, # Patrono
-    # Agosto
+    {"m": 7, "s": 19, "e": 21, "n": "SANT'ELIA (PATRONO)", "w": 2.5}, # IMPERDIBILE
+    
+    # AGOSTO
     {"m": 8, "s": 1,  "e": 5,  "n": "CARPINO FOLK", "w": 1.4},
+    {"m": 8, "s": 8,  "e": 22, "n": "GOLD WEEK", "w": 2.8}, # Settimana d'oro centrale
     {"m": 8, "s": 10, "e": 11, "n": "CALICI DI STELLE", "w": 1.5},
-    {"m": 8, "s": 14, "e": 16, "n": "FERRAGOSTO", "w": 3.0}, # Picco
-    {"m": 8, "s": 24, "e": 26, "n": "PESCHICI JAZZ", "w": 1.4},
-    # Settembre
+    {"m": 8, "s": 14, "e": 16, "n": "FERRAGOSTO", "w": 3.0}, # PICCO ASSOLUTO
+    {"m": 8, "s": 24, "e": 28, "n": "PESCHICI JAZZ", "w": 1.5},
+    
+    # SETTEMBRE
     {"m": 9, "s": 7,  "e": 8,  "n": "MADONNA DI LORETO", "w": 1.4},
     {"m": 9, "s": 19, "e": 20, "n": "GARGANO RUN", "w": 1.2},
 ]
@@ -177,7 +182,7 @@ def main():
         st.cache_data.clear()
         st.rerun()
 
-    # --- NAVIGAZIONE MESI ---
+    # --- NAVIGAZIONE MESI (FIXATA) ---
     c1, c2, c3 = st.columns([1, 6, 1])
     
     if c1.button("◀"): 
@@ -210,6 +215,7 @@ def main():
     for d in range(1, num_days + 1):
         _, evs = calcola_prezzo_strategico(d, st.session_state.mese, st.session_state.anno, {"base":100})
         if evs:
+            # Su mobile mostriamo solo la prima parola per non spaccare la tabella
             txt = "".join([f'<div class="ev-{i+1}">{ev["n"][:8]}</div>' for i, ev in enumerate(evs[:1])])
             html += f'<td style="background:#fff9c4;">{txt}</td>'
         else:
@@ -283,7 +289,10 @@ def main():
     with tab2:
         st.write("### Cancellazione Intelligente")
         if not df_p.empty and 'Data' in df_p.columns and 'Nome' in df_p.columns:
+            # Ordiniamo per data
             df_view = df_p.sort_values(by=['Struttura', 'Data'])
+            
+            # Logica raggruppamento
             gruppi = {}
             for _, row in df_view.iterrows():
                 key = f"{row['Nome']} - {row['Struttura']}"
