@@ -2,55 +2,53 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import text
 
-st.set_page_config(page_title="Victory Radar - Connessione Protetta", layout="wide")
+st.set_page_config(page_title="Victory Radar - Gestione Database", layout="wide")
 
-# Connessione usando il nuovo driver pymysql
+# Inizializziamo conn a None per evitare l'errore "not defined"
+conn = None
+
+# TENTATIVO DI CONNESSIONE
 try:
+    # Questa funzione cercherà 'username' nei tuoi Secrets
     conn = st.connection('mysql', type='sql')
-    st.success("✅ Sistema connesso al Database Aruba (Sql1816157_3)")
+    st.success("✅ Connessione al database Aruba riuscita!")
 except Exception as e:
-    st.error(f"❌ Errore di connessione: {e}")
+    st.error(f"❌ Errore di configurazione connessione: {e}")
+    st.info("Verifica di aver scritto 'username' (non 'user') nei Secrets di Streamlit.")
 
-# Funzione per leggere i dati
-def carica_prenotazioni():
+st.title(" Victory Radar Peschici")
+
+# Se la connessione esiste, procediamo con le operazioni
+if conn is not None:
+    
+    # --- PARTE LETTURA ---
+    st.subheader("Dati nel Database")
     try:
-        # Legge i dati reali dal database
         df = conn.query("SELECT * FROM prenotazioni ORDER BY Data DESC", ttl=0)
-        return df
+        if df is not None and not df.empty:
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.info("La tabella è vuota. Inserisci un test qui sotto.")
     except Exception as e:
-        st.error(f"Errore nella lettura dei dati: {e}")
-        return pd.DataFrame()
+        st.error(f"Errore nella lettura della tabella: {e}")
 
-st.title(" Victory Radar Peschici - Gestione Database")
+    # --- PARTE SCRITTURA ---
+    st.markdown("---")
+    with st.expander("➕ Inserisci un test rapido"):
+        with st.form("test_form"):
+            t_nome = st.text_input("Nome Ospite")
+            if st.form_submit_button("Invia al Database"):
+                try:
+                    with conn.session as s:
+                        s.execute(
+                            text("INSERT INTO prenotazioni (Data, Struttura, Nome) VALUES (CURDATE(), 'Test Unità', :nome)"),
+                            {"nome": t_nome}
+                        )
+                        s.commit()
+                    st.success("Dato inviato! Ricarica la pagina.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Errore in scrittura: {e}")
 
-# Sezione Inserimento
-with st.expander("📝 Inserisci una prenotazione di prova"):
-    with st.form("test_form"):
-        f_nome = st.text_input("Nome Ospite")
-        f_data = st.date_input("Giorno")
-        f_unita = st.selectbox("Unità", ["Hotel Peschici", "Il Melograno (VILLA)", "B&B La Sorgente"])
-        if st.form_submit_button("Invia al Database"):
-            try:
-                with conn.session as s:
-                    s.execute(
-                        text("INSERT INTO prenotazioni (Data, Struttura, Nome) VALUES (:d, :s, :n)"),
-                        {"d": f_data, "s": f_unita, "n": f_nome}
-                    )
-                    s.commit()
-                st.success("Dato salvato!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Errore salvataggio: {e}")
-
-# Visualizzazione Dati
-st.subheader("Tabella Prenotazioni")
-df = carica_prenotazioni()
-
-if not df.empty:
-    # Usiamo la tabella nativa di Streamlit: non può crashare!
-    st.dataframe(df, use_container_width=True)
 else:
-    st.info("Nessuna prenotazione trovata nel database.")
-
-st.markdown("---")
-st.caption("Victory Radar Pro v3.0 - MySQL Connection")
+    st.warning("Il sistema non è connesso al database. Controlla i Secrets su Streamlit Cloud.")
