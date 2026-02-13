@@ -1,24 +1,25 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
-import calendar
 import pandas as pd
 import requests
 import json
+import calendar
 from datetime import datetime, timedelta
 import time
 
 # --- 1. CONFIGURAZIONE ---
-st.set_page_config(page_title="Victory Radar Peschici PRO", layout="wide")
+st.set_page_config(page_title="Victory Radar REAL TIME", layout="wide")
 
-# IL TUO LINK GOOGLE SCRIPT (Il Ponte che funziona)
+# URL SCRIPT (Per SCRIVERE/ELIMINARE)
 URL_SCRIPT_GOOGLE = "https://script.google.com/macros/s/AKfycby0mE0ltg7MMQlwUb-jPmLuuUD-raHRLLV1vW7wJjk8VpJZIftWZ-M8Beuvwkrf5cROKA/exec"
+
+# URL CSV (Per LEGGERE i dati Freschi - Bypassiamo i Secrets)
+# Questo è il link che forza il download dei dati aggiornati
+SHEET_ID = "1I34jTQs-qVlwqkoeUsXpHhzNBiZTLwvAVjmmjs_My-o"
+URL_LETTURA_DIRETTA = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Prenotazioni"
 
 # --- 2. INIZIALIZZAZIONE ---
 if 'anno' not in st.session_state: st.session_state.anno = 2026
 if 'mese' not in st.session_state: st.session_state.mese = 2
-
-# Connessione veloce per la lettura
-conn = st.connection("gsheets", type=GSheetsConnection)
 
 STRUTTURE = {
     "Il Melograno (VILLA)":       {"base": 100},
@@ -31,9 +32,7 @@ STRUTTURE = {
     "Camping Int. Peschici":      {"base": 55},
     "Case Bianche Centro":        {"base": 95}
 }
-
-PARENT_UNIT = "Il Melograno (VILLA)"
-CHILD_UNITS = ["Il Melograno (SUITE)", "Il Melograno (FAMILY)"]
+PARENT_UNIT, CHILD_UNITS = "Il Melograno (VILLA)", ["Il Melograno (SUITE)", "Il Melograno (FAMILY)"]
 
 EVENTI_BASE = [
     {"m": 6, "s": 20, "e": 21, "n": "TRIATHLON", "w": 1.5},
@@ -44,29 +43,39 @@ EVENTI_BASE = [
     {"m": 8, "s": 26, "e": 28, "n": "PESCHICI JAZZ", "w": 1.4},
 ]
 
-# --- 3. FUNZIONI DATI ---
+# --- 3. FUNZIONI DATI (MODIFICATA PER ESSERE 'CATTIVA' CON LA CACHE) ---
 def carica_prenotazioni():
-    try: 
-        # Cache clearing automatico per vedere sempre i dati freschi
-        st.cache_data.clear()
-        df = conn.read(worksheet="Prenotazioni", ttl=0)
+    try:
+        # Scarichiamo il CSV direttamente da Google ogni volta
+        # Aggiungiamo un numero casuale all'URL per ingannare qualsiasi cache (?v=...)
+        timestamp = int(time.time())
+        url_fresco = f"{URL_LETTURA_DIRETTA}&v={timestamp}"
+        
+        df = pd.read_csv(url_fresco)
+        
+        # Pulizia
         if df is not None and not df.empty:
             df.columns = [c.strip() for c in df.columns]
-            df['Data'] = pd.to_datetime(df['Data'], errors='coerce').dt.strftime('%Y-%m-%d')
-            df['Struttura'] = df['Struttura'].astype(str).str.strip()
-            df = df.dropna(subset=['Data', 'Struttura'])
-        return df
-    except Exception:
-        return pd.DataFrame(columns=["Data", "Struttura", "Nome", "Tel", "Note", "Prezzo_Totale", "Acconto", "Saldo"])
+            # Cerchiamo le colonne giuste anche se scritte male
+            df.rename(columns=lambda x: x.capitalize(), inplace=True) 
+            
+            if 'Data' in df.columns and 'Struttura' in df.columns:
+                df['Data'] = pd.to_datetime(df['Data'], errors='coerce').dt.strftime('%Y-%m-%d')
+                df['Struttura'] = df['Struttura'].astype(str).str.strip()
+                df = df.dropna(subset=['Data', 'Struttura'])
+                return df
+                
+        return pd.DataFrame(columns=["Data", "Struttura", "Nome", "Tel", "Note", "Prezzo_totale", "Acconto", "Saldo"])
+    except Exception as e:
+        # Se fallisce, restituisce vuoto ma non blocca l'app
+        return pd.DataFrame(columns=["Data", "Struttura", "Nome", "Tel", "Note", "Prezzo_totale", "Acconto", "Saldo"])
 
 def invia_al_cloud(payload):
     try: 
         headers = {'Content-Type': 'application/json'}
         response = requests.post(URL_SCRIPT_GOOGLE, data=json.dumps(payload), headers=headers)
         return response.status_code == 200
-    except: 
-        st.error("Errore di connessione al Cloud")
-        return False
+    except: return False
 
 def calcola_prezzo_strategico(giorno, mese, anno, info):
     dt = datetime(anno, mese, giorno)
@@ -79,7 +88,7 @@ def calcola_prezzo_strategico(giorno, mese, anno, info):
     if dt.weekday() >= 4: molt *= 1.15
     return int(info['base'] * molt), ev_oggi
 
-# --- 4. STILE CSS ---
+# --- 4. CSS ---
 st.markdown("""
     <style>
     .stApp { background-color: #f1f8e9; }
@@ -96,7 +105,12 @@ st.markdown("""
 
 # --- 5. INTERFACCIA ---
 def main():
-    st.markdown(f"<h1 style='text-align:center; color:#2e7d32;'>VICTORY RADAR 2026</h1>", unsafe_allow_html=True)
+    st.markdown(f"<h1 style='text-align:center; color:#2e7d32;'>VICTORY RADAR REAL TIME</h1>", unsafe_allow_html=True)
+    
+    # PULSANTE FORZA AGGIORNAMENTO
+    if st.button("🔄 FORZA AGGIORNAMENTO DATI (Clicca se non vedi le modifiche)"):
+        st.cache_data.clear()
+        st.rerun()
 
     # Navigazione
     n1, n2, n3 = st.columns([1, 8, 1])
@@ -104,6 +118,7 @@ def main():
     n2.markdown(f"<h3 style='text-align:center;'>{calendar.month_name[st.session_state.mese].upper()} {st.session_state.anno}</h3>", unsafe_allow_html=True)
     if n3.button("▶"): st.session_state.mese += 1; st.rerun()
 
+    # CARICAMENTO DATI (Senza Cache)
     df_p = carica_prenotazioni()
     num_days = calendar.monthrange(st.session_state.anno, st.session_state.mese)[1]
 
@@ -115,7 +130,6 @@ def main():
         html += f'<th style="background:{bg}">{d}<br>{dt_t.strftime("%a")}</th>'
     html += '</tr></thead><tbody>'
 
-    # Righe Radar Eventi
     html += '<tr><td class="sticky-col" style="background:#fff9c4; color:#f57f17">📡 RADAR EVENTI</td>'
     for d in range(1, num_days + 1):
         _, evs = calcola_prezzo_strategico(d, st.session_state.mese, st.session_state.anno, {"base":100})
@@ -123,17 +137,18 @@ def main():
         html += f'<td style="background:#fff9c4;">{txt}</td>'
     html += '</tr>'
 
-    # Righe Strutture
     for ns, info in STRUTTURE.items():
         conflitti = []
         chk_units = CHILD_UNITS if ns == PARENT_UNIT else ([PARENT_UNIT] if ns in CHILD_UNITS else [])
-        if not df_p.empty:
+        if not df_p.empty and 'Struttura' in df_p.columns:
             conflitti = df_p[df_p['Struttura'].isin(chk_units)]['Data'].tolist()
 
         html += f'<tr><td class="sticky-col">{ns}</td>'
         for d in range(1, num_days + 1):
             k = f"{st.session_state.anno}-{st.session_state.mese:02d}-{d:02d}"
-            m = df_p[(df_p['Data'] == k) & (df_p['Struttura'] == ns)] if not df_p.empty else pd.DataFrame()
+            m = pd.DataFrame()
+            if not df_p.empty and 'Data' in df_p.columns:
+                m = df_p[(df_p['Data'] == k) & (df_p['Struttura'] == ns)]
 
             if k in conflitti: 
                 html += '<td class="cell-locked">🔒</td>'
@@ -159,20 +174,19 @@ def main():
             
             notti = (b2-b1).days if (b2-b1).days > 0 else 1
             prz_s, _ = calcola_prezzo_strategico(b1.day, b1.month, st.session_state.anno, STRUTTURE[su])
-            tot_calc = float(prz_s * notti)
+            pt = st.number_input("Totale", value=float(prz_s * notti)); ac = st.number_input("Acconto", value=0.0)
             
-            pt = st.number_input("Totale", value=tot_calc); ac = st.number_input("Acconto", value=0.0)
-            
-            if st.form_submit_button("SALVA SU CLOUD"):
+            if st.form_submit_button("SALVA (ATTENDI 3 SECONDI)"):
                 nuove = []
                 for i in range(notti):
                     g = (b1 + timedelta(days=i)).strftime("%Y-%m-%d")
                     nuove.append({"Data": g, "Struttura": su, "Nome": nm, "Tel": tl, "Note": nt, "Prezzo_Totale": pt, "Acconto": ac, "Saldo": pt-ac})
                 
                 if invia_al_cloud(nuove): 
-                    time.sleep(1) # Un secondo di respiro per Google
-                    st.cache_data.clear()
-                    st.success("✅ Prenotazione Salvata!")
+                    with st.spinner("Salvataggio su Google in corso..."):
+                        time.sleep(3) # Google ha bisogno di tempo
+                        st.cache_data.clear() # Pulisci cache
+                    st.success("✅ Salvato!")
                     st.rerun()
 
     with c_del:
@@ -180,9 +194,18 @@ def main():
         d_d = st.date_input("Giorno"); d_s = st.selectbox("Unità", list(STRUTTURE.keys()), key="del_s")
         if st.button("ELIMINA", type="primary"):
             if invia_al_cloud({"action": "DELETE", "date": d_d.strftime("%Y-%m-%d"), "structure": d_s}):
-                time.sleep(1)
-                st.cache_data.clear()
+                with st.spinner("Cancellazione in corso..."):
+                    time.sleep(3)
+                    st.cache_data.clear()
                 st.success("✅ Cancellato!")
                 st.rerun()
+
+    # DEBUG VISIVO: Qui vedi esattamente cosa è arrivato
+    with st.expander("🔍 DEBUG: Cosa c'è nel foglio Google adesso?"):
+        if not df_p.empty:
+            st.write(f"Ho trovato {len(df_p)} prenotazioni.")
+            st.dataframe(df_p)
+        else:
+            st.warning("Il foglio sembra vuoto o non riesco a leggerlo.")
 
 if __name__ == "__main__": main()
