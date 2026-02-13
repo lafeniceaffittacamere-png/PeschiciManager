@@ -3,12 +3,16 @@ from streamlit_gsheets import GSheetsConnection
 import calendar
 import pandas as pd
 import requests
+import json
 from datetime import datetime, timedelta
 
 # --- 1. CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="Victory Radar Peschici ULTIMATE CLOUD", layout="wide")
+st.set_page_config(page_title="Victory Radar Peschici ULTIMATE", layout="wide")
 
-# --- 2. INIZIALIZZAZIONE STATO ---
+# --- 2. IL TUO LINK "PIANO B" (Senza Carta di Credito) ---
+URL_SCRIPT_GOOGLE = "https://script.google.com/macros/s/AKfycbx7X-0P63XjFNEJ9lA_CHVLN-u0at_kxpEd-O5YSBi98sNvr9wsBmR7GNZqA0GSDgRa/exec"
+
+# --- 3. INIZIALIZZAZIONE STATO ---
 if 'anno' not in st.session_state:
     st.session_state.anno = 2026
 if 'mese' not in st.session_state:
@@ -16,7 +20,7 @@ if 'mese' not in st.session_state:
 if 'market_prices' not in st.session_state:
     st.session_state.market_prices = {}
 
-# --- 3. CONNESSIONE CLOUD & API ---
+# --- 4. CONNESSIONE & COSTANTI ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 API_KEY = "1eefd886de298c71a9832a62837c0adb7ddc471ee28ded6ce24d9682f39c4ee1" 
 
@@ -45,16 +49,22 @@ EVENTI_BASE = [
     {"m": 8, "s": 26, "e": 28, "n": "PESCHICI JAZZ", "w": 1.4},
 ]
 
-# --- 4. FUNZIONI DATI CLOUD ---
+# --- 5. FUNZIONI DATI (Lettura da GSheets, Scrittura via Script) ---
 def carica_prenotazioni():
-    try: return conn.read(worksheet="Prenotazioni")
+    try: return conn.read(worksheet="Prenotazioni", ttl="1m")
     except: return pd.DataFrame(columns=["Data", "Struttura", "Nome", "Tel", "Note", "Prezzo_Totale", "Acconto", "Saldo"])
 
 def carica_eventi_manuali():
-    try: return conn.read(worksheet="Eventi")
+    try: return conn.read(worksheet="Eventi", ttl="1m")
     except: return pd.DataFrame(columns=["Nome", "Mese", "Inizio", "Fine", "Peso"])
 
-# --- 5. LOGICA PREZZI ---
+def salva_prenotazione_via_script(lista_nuove_date):
+    try:
+        r = requests.post(URL_SCRIPT_GOOGLE, data=json.dumps(lista_nuove_date))
+        return r.status_code == 200
+    except: return False
+
+# --- 6. LOGICA PREZZI ---
 def get_market_average(date_str):
     check_out = (datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
     params = {"engine": "google_hotels", "q": "hotel peschici foggia", "check_in_date": date_str, "check_out_date": check_out, "currency": "EUR", "api_key": API_KEY}
@@ -70,19 +80,15 @@ def calcola_prezzo_strategico(giorno, mese, anno, info, manuali_df):
     if mese == 8: molt = 2.4
     elif mese == 7: molt = 1.7
     elif mese in [6, 9]: molt = 1.2
-    
     tutti = EVENTI_BASE.copy()
     for _, r in manuali_df.iterrows():
         tutti.append({"m": int(r['Mese']), "s": int(r['Inizio']), "e": int(r['Fine']), "n": r['Nome'], "w": float(r['Peso'])})
-    
     ev_oggi = [e for e in tutti if e['m'] == mese and e['s'] <= giorno <= e['e']]
-    if ev_oggi:
-        molt = max(molt, max([e['w'] for e in ev_oggi]))
-    
+    if ev_oggi: molt = max(molt, max([e['w'] for e in ev_oggi]))
     if dt.weekday() >= 4: molt *= 1.15
     return int(info['base'] * molt), ev_oggi
 
-# --- 6. CSS VICTORY GREEN ---
+# --- 7. CSS VICTORY GREEN ---
 st.markdown("""
     <style>
     .stApp { background-color: #f1f8e9; }
@@ -91,28 +97,26 @@ st.markdown("""
     th, td { padding: 4px; text-align: center; border-right: 1px solid #eee; border-bottom: 1px solid #eee; min-width: 95px; height: 65px; vertical-align: middle; }
     th.date-header { position: sticky; top: 0; background-color: #e8f5e9; color: #1b5e20; z-index: 10; border-bottom: 2px solid #81c784; font-size: 11px; }
     .sticky-col { position: sticky; left: 0; background-color: #2e7d32; z-index: 11; color: white; text-align: left; padding-left: 8px; min-width: 150px; font-weight: bold; font-size: 11px; }
-    
     .ev-1 { color: #f57f17; font-weight: bold; font-size: 9px; }
     .ev-2 { color: #8e44ad; font-weight: bold; font-size: 9px; border-top: 1px dashed #ddd; }
-    
     .cell-event { background-color: #fff9c4; border-bottom: 2px solid #fbc02d; line-height: 1.1; }
     .cell-booked { background-color: #ffcdd2 !important; color: #b71c1c !important; border-left: 3px solid #d32f2f; font-weight: bold; text-align: left; padding-left: 4px; font-size: 9px; }
-    
     .info-price { font-size: 13px; color: #1b5e20; font-weight: 800; display: block; }
     .info-market { font-size: 9px; color: #c62828; display: block; font-weight: bold; margin-top: 2px; }
-    .section-box { background: white; padding: 12px; border-radius: 8px; border: 1px solid #a5d6a7; height: 100%; }
+    .section-box { background: white; padding: 12px; border-radius: 8px; border: 1px solid #a5d6a7; }
     header {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
 
-# --- 7. MAIN UI ---
+# --- 8. MAIN UI ---
 def main():
-    st.markdown(f"<h3 style='text-align:center; color:#2e7d32;'>VICTORY RADAR PRO CLOUD</h3>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='text-align:center; color:#2e7d32;'>VICTORY RADAR PRO ONLINE</h3>", unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns([1, 8, 1])
-    if c1.button("◀"): st.session_state.mese -= 1; st.rerun()
-    c2.markdown(f"<h4 style='text-align:center;'>{calendar.month_name[st.session_state.mese].upper()}</h4>", unsafe_allow_html=True)
-    if c3.button("▶"): st.session_state.mese += 1; st.rerun()
+    # Navigazione
+    nav1, nav2, nav3 = st.columns([1, 8, 1])
+    if nav1.button("◀"): st.session_state.mese -= 1; st.rerun()
+    nav2.markdown(f"<h4 style='text-align:center;'>{calendar.month_name[st.session_state.mese].upper()}</h4>", unsafe_allow_html=True)
+    if nav3.button("▶"): st.session_state.mese += 1; st.rerun()
 
     df_p = carica_prenotazioni()
     df_e = carica_eventi_manuali()
@@ -123,7 +127,7 @@ def main():
     for d in range(1, num_days + 1): html += f'<th class="date-header">{d}</th>'
     html += '</tr></thead><tbody>'
 
-    # Radar
+    # Riga Radar
     html += '<tr><td class="sticky-col" style="background:#fff9c4; color:#f57f17">📡 RADAR</td>'
     for d in range(1, num_days + 1):
         _, evs = calcola_prezzo_strategico(d, st.session_state.mese, st.session_state.anno, {"base":100}, df_e)
@@ -144,9 +148,7 @@ def main():
             
             if k in confl: html += '<td style="background:#eee;">🔒</td>'
             elif not m.empty:
-                # Mostra Nome e se c'è un Saldo residuo
-                ospite = m.iloc[0]["Nome"][:8]
-                html += f'<td class="cell-booked">{ospite}</td>'
+                html += f'<td class="cell-booked">{m.iloc[0]["Nome"][:8]}</td>'
             else:
                 prz, _ = calcola_prezzo_strategico(d, st.session_state.mese, st.session_state.anno, info, df_e)
                 mkt = st.session_state.market_prices.get(k, "---")
@@ -161,15 +163,13 @@ def main():
 
     with ca:
         st.markdown('<div class="section-box">', unsafe_allow_html=True)
-        st.subheader("🚩 GESTISCI EVENTI")
+        st.subheader("🚩 EVENTI")
         with st.form("ev"):
             en = st.text_input("Nome Evento")
             c1, c2, c3 = st.columns(3); em = c1.number_input("M", 1, 12, st.session_state.mese); es = c2.number_input("In", 1, 31, 1); ee = c3.number_input("Fi", 1, 31, 1)
-            ew = st.slider("Livello Peso", 1.0, 3.0, 1.5, 0.1)
-            if st.form_submit_button("SALVA"):
-                nuovo = pd.DataFrame([{"Nome": en, "Mese": em, "Inizio": es, "Fine": ee, "Peso": ew}])
-                conn.update(worksheet="Eventi", data=pd.concat([df_e, nuovo], ignore_index=True))
-                st.rerun()
+            ew = st.slider("Peso", 1.0, 3.0, 1.5, 0.1)
+            if st.form_submit_button("AGGIUNGI"):
+                st.info("Aggiunta eventi via script non configurata, ma i manuali letti appaiono!")
         st.markdown('</div>', unsafe_allow_html=True)
 
     with cb:
@@ -188,34 +188,31 @@ def main():
 
     with cc:
         st.markdown('<div class="section-box">', unsafe_allow_html=True)
-        st.subheader("📝 PRENOTAZIONE COMPLETA")
+        st.subheader("📝 PRENOTAZIONE")
         with st.form("bk"):
             su = st.selectbox("Unità", MELOGRANO_UNITS)
             bc1, bc2 = st.columns(2); b1 = bc1.date_input("In"); b2 = bc2.date_input("Out")
-            nm = st.text_input("Nome Cliente")
-            tl = st.text_input("Telefono")
-            note = st.text_input("Note (es. Late check-in)")
+            nm = st.text_input("Nome Cliente"); tl = st.text_input("Telefono"); note = st.text_input("Note")
             
-            # Calcolo suggerito
             notti = (b2-b1).days if (b2-b1).days > 0 else 1
-            info_u = STRUTTURE[su]
-            prz_sug = sum([calcola_prezzo_strategico((b1+timedelta(days=x)).day, (b1+timedelta(days=x)).month, st.session_state.anno, info_u, df_e)[0] for x in range(notti)])
-            
+            prz_sug = sum([calcola_prezzo_strategico((b1+timedelta(days=x)).day, (b1+timedelta(days=x)).month, st.session_state.anno, STRUTTURE[su], df_e)[0] for x in range(notti)])
             p_tot = st.number_input("Prezzo Totale (€)", value=float(prz_sug))
-            acconto = st.number_input("Acconto Versato (€)", value=0.0)
-            saldo = p_tot - acconto
-            st.write(f"**Saldo da incassare: {saldo} €**")
+            acc = st.number_input("Acconto (€)", value=0.0)
             
-            if st.form_submit_button("CONFERMA PRENOTAZIONE"):
+            st.write(f"**Saldo: {p_tot - acc} €**")
+            
+            if st.form_submit_button("CONFERMA E SALVA"):
                 nuove = []
                 for i in range(notti):
                     nuove.append({
-                        "Data": (b1 + timedelta(days=i)).strftime("%Y-%m-%d"), 
+                        "Data": (b1 + timedelta(days=i)).strftime("%Y-%m-%d"),
                         "Struttura": su, "Nome": nm, "Tel": tl, "Note": note,
-                        "Prezzo_Totale": p_tot, "Acconto": acconto, "Saldo": saldo
+                        "Prezzo_Totale": p_tot, "Acconto": acc, "Saldo": p_tot - acc
                     })
-                conn.update(worksheet="Prenotazioni", data=pd.concat([df_p, pd.DataFrame(nuove)], ignore_index=True))
-                st.rerun()
+                if salva_prenotazione_via_script(nuove):
+                    st.success("Salvato!")
+                    st.rerun()
+                else: st.error("Errore script!")
         st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
