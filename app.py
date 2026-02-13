@@ -1,19 +1,20 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import calendar
 from datetime import datetime, timedelta
 
-# --- CONFIGURAZIONE ---
-st.set_page_config(page_title="Victory Radar Peschici PRO", layout="wide")
+# --- 1. CONFIGURAZIONE ---
+st.set_page_config(page_title="Victory Radar Peschici (Direct)", layout="wide")
 
-# Connessione Google Sheets
-conn = st.connection("gsheets", type=GSheetsConnection)
+# Link DIRETTO al foglio (senza passare dai Secrets)
+SHEET_ID = "1I34jTQs-qVlwqkoeUsXpHhzNBiZTLwvAVjmmjs_My-o"
+# Questo URL scarica i dati direttamente in formato CSV
+CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
 
 if 'anno' not in st.session_state: st.session_state.anno = 2026
 if 'mese' not in st.session_state: st.session_state.mese = 2
 
-# --- COSTANTI ---
+# --- 2. COSTANTI ---
 STRUTTURE = {
     "Il Melograno (VILLA)": {"base": 100}, "Il Melograno (SUITE)": {"base": 60},
     "Il Melograno (FAMILY)": {"base": 75}, "Hotel Peschici": {"base": 110},
@@ -33,12 +34,16 @@ EVENTI_BASE = [
     {"m": 8, "s": 26, "e": 28, "n": "PESCHICI JAZZ", "w": 1.4},
 ]
 
-# --- LOGICA DATI ---
+# --- 3. FUNZIONI DATI (Metodo Diretto) ---
 def carica_prenotazioni():
     try:
-        # Carica i dati dal foglio "prenotazioni"
-        return conn.read(worksheet="prenotazioni", ttl=0)
-    except:
+        # Legge direttamente dal link pubblico - ZERO ERRORI DI CONFIGURAZIONE
+        df = pd.read_csv(CSV_URL)
+        # Pulizia nomi colonne per sicurezza
+        df.columns = df.columns.str.strip()
+        return df
+    except Exception as e:
+        # Se il foglio è vuoto o irraggiungibile
         return pd.DataFrame(columns=["Data", "Struttura", "Nome", "Tel", "Note", "Prezzo_Totale", "Acconto", "Saldo"])
 
 def calcola_prezzo_strategico(giorno, mese, anno, info):
@@ -51,7 +56,7 @@ def calcola_prezzo_strategico(giorno, mese, anno, info):
     if dt.weekday() >= 4: molt *= 1.15
     return int(info['base'] * molt), ev_oggi
 
-# --- CSS PERSONALIZZATO ---
+# --- 4. CSS ---
 st.markdown("""
     <style>
     .stApp { background-color: #f1f8e9; }
@@ -66,26 +71,19 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- UI PRINCIPALE ---
+# --- 5. INTERFACCIA ---
 def main():
-    st.markdown("<h1 style='text-align:center; color:#2e7d32;'>VICTORY RADAR PESCHICI 2026</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align:center; color:#2e7d32;'>VICTORY RADAR PESCHICI (Mod. Diretto)</h1>", unsafe_allow_html=True)
 
-    # Navigazione Mesi
     c1, c2, c3 = st.columns([1, 2, 1])
-    if c1.button("◀ Precedente"):
-        st.session_state.mese -= 1
-        if st.session_state.mese < 1: st.session_state.mese = 12; st.session_state.anno -= 1
-        st.rerun()
+    if c1.button("◀"): st.session_state.mese -= 1; st.rerun()
     c2.markdown(f"<h2 style='text-align:center;'>{calendar.month_name[st.session_state.mese].upper()} {st.session_state.anno}</h2>", unsafe_allow_html=True)
-    if c3.button("Successivo ▶"):
-        st.session_state.mese += 1
-        if st.session_state.mese > 12: st.session_state.mese = 1; st.session_state.anno += 1
-        st.rerun()
+    if c3.button("▶"): st.session_state.mese += 1; st.rerun()
 
     df_p = carica_prenotazioni()
     num_days = calendar.monthrange(st.session_state.anno, st.session_state.mese)[1]
 
-    # COSTRUZIONE TABELLA
+    # TABELLA
     html = '<div class="planning-container"><table><thead><tr><th class="sticky-col">STRUTTURA</th>'
     for d in range(1, num_days + 1):
         dt_t = datetime(st.session_state.anno, st.session_state.mese, d)
@@ -94,19 +92,21 @@ def main():
     html += '</tr></thead><tbody>'
 
     for ns, info in STRUTTURE.items():
-        # Logica Villa/Suite
         target = CHILD_UNITS if ns == PARENT_UNIT else ([PARENT_UNIT] if ns in CHILD_UNITS else [])
         blocked = []
-        if not df_p.empty:
+        if not df_p.empty and 'Struttura' in df_p.columns and 'Data' in df_p.columns:
             blocked = df_p[df_p['Struttura'].astype(str).isin(target)]['Data'].astype(str).tolist()
 
         html += f'<tr><td class="sticky-col">{ns}</td>'
         for d in range(1, num_days + 1):
             k = f"{st.session_state.anno}-{st.session_state.mese:02d}-{d:02d}"
-            res = df_p[(df_p['Data'].astype(str) == k) & (df_p['Struttura'] == ns)] if not df_p.empty else pd.DataFrame()
+            # Controllo esistenza dati
+            res = pd.DataFrame()
+            if not df_p.empty and 'Data' in df_p.columns:
+                res = df_p[(df_p['Data'].astype(str) == k) & (df_p['Struttura'] == ns)]
 
             if k in blocked:
-                html += '<td class="locked">🔒 BLOCC.</td>'
+                html += '<td class="locked">🔒</td>'
             elif not res.empty:
                 nome = str(res.iloc[0]["Nome"])[:10].upper()
                 html += f'<td class="booked">{nome}</td>'
@@ -116,41 +116,10 @@ def main():
                 html += f'<td><span class="price-tag">€{p}</span>{ev_txt}</td>'
         html += '</tr>'
     
-    html += '</tbody></table></div>'
-    st.markdown(html, unsafe_allow_html=True)
-
-    # AZIONI
+    st.markdown(html + '</tbody></table></div>', unsafe_allow_html=True)
+    
     st.divider()
-    col_a, col_b = st.columns(2)
-    with col_a:
-        with st.form("bk"):
-            st.subheader("📝 Nuova Prenotazione")
-            f_s = st.selectbox("Unità", list(STRUTTURE.keys()))
-            f_in = st.date_input("Inizio"); f_out = st.date_input("Fine")
-            f_n = st.text_input("Nome Ospite")
-            if st.form_submit_button("REGISTRA"):
-                notti = (f_out - f_in).days if (f_out - f_in).days > 0 else 1
-                p_u, _ = calcola_prezzo_strategico(f_in.day, f_in.month, f_in.year, STRUTTURE[f_s])
-                
-                # Creiamo le righe
-                nuove_righe = []
-                for i in range(notti):
-                    g = (f_in + timedelta(days=i)).strftime("%Y-%m-%d")
-                    nuove_righe.append([g, f_s, f_n, "", "", p_u*notti, 0, p_u*notti])
-                
-                df_nuovo = pd.DataFrame(nuove_righe, columns=df_p.columns)
-                df_finale = pd.concat([df_p, df_nuovo], ignore_index=True)
-                conn.update(worksheet="prenotazioni", data=df_finale)
-                st.success("Sincronizzato!")
-                st.rerun()
-
-    with col_b:
-        st.subheader("🗑️ Elimina")
-        d_d = st.date_input("Giorno"); d_s = st.selectbox("Unità", list(STRUTTURE.keys()), key="del")
-        if st.button("ELIMINA RIGA", type="primary"):
-            df_p = df_p[~((df_p['Data'].astype(str) == d_d.strftime("%Y-%m-%d")) & (df_p['Struttura'] == d_s))]
-            conn.update(worksheet="prenotazioni", data=df_p)
-            st.rerun()
+    st.info("ℹ️ In questa modalità 'Diretta', puoi vedere le prenotazioni che aggiungi manualmente nel file Google Sheets. Per riattivare il salvataggio automatico da qui, dobbiamo sistemare i Secrets con calma.")
 
 if __name__ == "__main__":
     main()
