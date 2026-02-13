@@ -8,10 +8,9 @@ from sqlalchemy import text
 st.set_page_config(page_title="Victory Radar Peschici DB-PRO", layout="wide")
 
 # --- 2. CONNESSIONE DATABASE ---
-# Assicurati di avere SQLAlchemy e mysqlclient nel requirements.txt
 conn = st.connection('mysql', type='sql')
 
-# --- 3. INIZIALIZZAZIONE ---
+# --- 3. INIZIALIZZAZIONE SESSIONE ---
 if 'anno' not in st.session_state: st.session_state.anno = 2026
 if 'mese' not in st.session_state: st.session_state.mese = 2
 
@@ -27,7 +26,6 @@ STRUTTURE = {
     "Camping Int. Peschici":      {"base": 55},
     "Case Bianche Centro":        {"base": 95}
 }
-
 PARENT_UNIT = "Il Melograno (VILLA)"
 CHILD_UNITS = ["Il Melograno (SUITE)", "Il Melograno (FAMILY)"]
 
@@ -48,20 +46,17 @@ def carica_prenotazioni():
             df['Data'] = pd.to_datetime(df['Data']).dt.strftime('%Y-%m-%d')
         return df
     except:
-        return pd.DataFrame(columns=["Data", "Struttura", "Nome", "Tel", "Note", "Prezzo_Totale", "Acconto", "Saldo"])
+        return pd.DataFrame()
 
 def salva_prenotazione(lista_p):
     try:
         with conn.session as s:
             for p in lista_p:
-                query = text("""INSERT INTO prenotazioni (Data, Struttura, Nome, Tel, Note, Prezzo_Totale, Acconto, Saldo) 
-                                VALUES (:Data, :Struttura, :Nome, :Tel, :Note, :Prezzo_Totale, :Acconto, :Saldo)""")
-                s.execute(query, p)
+                s.execute(text("""INSERT INTO prenotazioni (Data, Struttura, Nome, Tel, Note, Prezzo_Totale, Acconto, Saldo) 
+                                VALUES (:Data, :Struttura, :Nome, :Tel, :Note, :Prezzo_Totale, :Acconto, :Saldo)"""), p)
             s.commit()
         return True
-    except Exception as e:
-        st.error(f"Errore: {e}")
-        return False
+    except: return False
 
 def elimina_prenotazione(data, struttura):
     try:
@@ -69,8 +64,7 @@ def elimina_prenotazione(data, struttura):
             s.execute(text("DELETE FROM prenotazioni WHERE Data = :d AND Struttura = :s"), {"d": data, "s": struttura})
             s.commit()
         return True
-    except:
-        return False
+    except: return False
 
 def calcola_prezzo_strategico(giorno, mese, anno, info):
     dt = datetime(anno, mese, giorno)
@@ -83,74 +77,68 @@ def calcola_prezzo_strategico(giorno, mese, anno, info):
     if dt.weekday() >= 4: molt *= 1.15
     return int(info['base'] * molt), ev_oggi
 
-# --- 6. STILI ---
-CSS = """
-<style>
-    .planning-container { overflow-x: auto; background: white; border: 1px solid #a5d6a7; border-radius: 8px; font-family: sans-serif; }
-    table { border-collapse: collapse; width: 100%; border-spacing: 0; }
-    th, td { padding: 4px; text-align: center; border: 1px solid #eee; min-width: 85px; height: 70px; }
-    .sticky-col { position: sticky; left: 0; background: #2e7d32; color: white; font-weight: bold; min-width: 160px; z-index: 5; text-align: left; padding-left: 8px; font-size: 12px; }
-    .cell-booked { background: #ffcdd2 !important; color: #b71c1c !important; font-weight: bold; font-size: 11px; border-left: 4px solid #d32f2f !important; }
-    .cell-lock { background: #f5f5f5 !important; color: #bbb !important; }
-    .ev-tag { color: #f57f17; font-weight: bold; font-size: 9px; }
-    .info-price { font-size: 13px; color: #1b5e20; font-weight: bold; }
-</style>
-"""
-
-# --- 7. MAIN UI ---
+# --- 6. MAIN UI ---
 def main():
-    st.markdown(CSS, unsafe_allow_html=True)
-    st.markdown("<h2 style='text-align:center; color:#2e7d32;'>VICTORY RADAR PRO (MySQL)</h2>", unsafe_allow_html=True)
+    st.markdown("""
+        <style>
+        .planning-container { overflow-x: auto; background: white; border: 1px solid #ddd; border-radius: 4px; }
+        table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 11px; }
+        th, td { border: 1px solid #eee; min-width: 80px; height: 60px; text-align: center; }
+        .sticky-col { position: sticky; left: 0; background: #2e7d32; color: white; z-index: 2; min-width: 150px; text-align: left; padding-left: 5px; }
+        .cell-booked { background: #ffcdd2 !important; color: #b71c1c; font-weight: bold; }
+        .cell-lock { background: #f0f0f0 !important; color: #ccc; }
+        .info-price { color: #1b5e20; font-weight: bold; }
+        </style>
+    """, unsafe_allow_html=True)
 
-    # Navigazione
-    col_n1, col_n2, col_n3 = st.columns([1, 4, 1])
-    with col_n1:
-        if st.button("◀ Mese Prec."):
-            st.session_state.mese -= 1
-            if st.session_state.mese < 1: st.session_state.mese = 12; st.session_state.anno -= 1
-            st.rerun()
-    with col_n2:
-        st.markdown(f"<h3 style='text-align:center;'>{calendar.month_name[st.session_state.mese].upper()} {st.session_state.anno}</h3>", unsafe_allow_html=True)
-    with col_n3:
-        if st.button("Mese Succ. ▶"):
-            st.session_state.mese += 1
-            if st.session_state.mese > 12: st.session_state.mese = 1; st.session_state.anno += 1
-            st.rerun()
+    st.title(" Victory Radar Peschici")
+
+    # Navigazione Mesi
+    c1, c2, c3 = st.columns([1, 2, 1])
+    if c1.button("◀ Mese Prec."):
+        st.session_state.mese -= 1
+        if st.session_state.mese < 1: st.session_state.mese = 12; st.session_state.anno -= 1
+        st.rerun()
+    c2.subheader(f"{calendar.month_name[st.session_state.mese].upper()} {st.session_state.anno}")
+    if c3.button("Mese Succ. ▶"):
+        st.session_state.mese += 1
+        if st.session_state.mese > 12: st.session_state.mese = 1; st.session_state.anno += 1
+        st.rerun()
 
     df_p = carica_prenotazioni()
     num_days = calendar.monthrange(st.session_state.anno, st.session_state.mese)[1]
 
-    # --- COSTRUZIONE TABELLA ---
-    html = '<div class="planning-container"><table><thead><tr><th class="sticky-col">STRUTTURE</th>'
+    # --- GENERAZIONE HTML ---
+    # Usiamo una chiave univoca basata sul tempo per forzare il refresh del DOM ed evitare il removeChild error
+    tab_key = f"table_{st.session_state.mese}_{st.session_state.anno}"
+    
+    html = f'<div class="planning-container" id="{tab_key}"><table><thead><tr><th class="sticky-col">STRUTTURA</th>'
     for d in range(1, num_days + 1):
         dt_t = datetime(st.session_state.anno, st.session_state.mese, d)
-        bg = "#c8e6c9" if dt_t.weekday() >= 5 else "#e8f5e9"
-        html += f'<th style="background:{bg};">{d}<br><small>{dt_t.strftime("%a")}</small></th>'
+        bg = "#c8e6c9" if dt_t.weekday() >= 5 else "#f9f9f9"
+        html += f'<th style="background:{bg};">{d}<br>{dt_t.strftime("%a")}</th>'
     html += '</tr></thead><tbody>'
 
     # Radar Eventi
     html += '<tr><td class="sticky-col" style="background:#fff9c4; color:#f57f17">📡 RADAR EVENTI</td>'
     for d in range(1, num_days + 1):
         _, evs = calcola_prezzo_strategico(d, st.session_state.mese, st.session_state.anno, {"base":100})
-        txt = "<br>".join([f'<span class="ev-tag">{e["n"][:10]}</span>' for e in evs])
-        html += f'<td style="background:#fff9c4;">{txt}</td>'
+        txt = " ".join([e["n"][:10] for e in evs])
+        html += f'<td style="background:#fff9c4; color:#f57f17; font-size:9px;">{txt}</td>'
     html += '</tr>'
 
-    # Righe Strutture
     for ns, info in STRUTTURE.items():
-        # Logica Blocco Incrociato
         target_units = CHILD_UNITS if ns == PARENT_UNIT else ([PARENT_UNIT] if ns in CHILD_UNITS else [])
-        blocked_dates = df_p[df_p['Struttura'].isin(target_units)]['Data'].tolist() if not df_p.empty else []
+        blocked = df_p[df_p['Struttura'].isin(target_units)]['Data'].tolist() if not df_p.empty else []
 
         html += f'<tr><td class="sticky-col">{ns}</td>'
         for d in range(1, num_days + 1):
             k = f"{st.session_state.anno}-{st.session_state.mese:02d}-{d:02d}"
             res = df_p[(df_p['Data'] == k) & (df_p['Struttura'] == ns)] if not df_p.empty else pd.DataFrame()
 
-            if k in blocked_dates:
-                html += '<td class="cell-lock">🔒</td>'
+            if k in blocked: html += '<td class="cell-lock">🔒</td>'
             elif not res.empty:
-                nome = str(res.iloc[0]["Nome"]).upper()[:10]
+                nome = str(res.iloc[0]["Nome"])[:10]
                 html += f'<td class="cell-booked">{nome}</td>'
             else:
                 p, _ = calcola_prezzo_strategico(d, st.session_state.mese, st.session_state.anno, info)
@@ -159,52 +147,34 @@ def main():
     
     html += '</tbody></table></div>'
     
-    # Rendering Tabella con Placeholder per stabilità
+    # Visualizza la tabella
     st.markdown(html, unsafe_allow_html=True)
 
-    # --- AREA AZIONI ---
-    st.markdown("---")
-    col_form, col_del = st.columns(2)
-
-    with col_form:
-        with st.form("nuova_pre"):
-            st.subheader("📝 Prenota")
-            f_str = st.selectbox("Unità", list(STRUTTURE.keys()))
-            f_in = st.date_input("Check-in")
-            f_out = st.date_input("Check-out")
+    # --- AZIONI ---
+    st.divider()
+    col_a, col_b = st.columns(2)
+    
+    with col_a:
+        with st.form("prenota"):
+            st.subheader("📝 Nuova Prenotazione")
+            f_str = st.selectbox("Struttura", list(STRUTTURE.keys()))
+            f_in = st.date_input("In")
+            f_out = st.date_input("Out")
             f_nom = st.text_input("Nome")
-            f_tel = st.text_input("Tel")
             f_not = st.text_input("Note")
-            
-            notti = (f_out - f_in).days
-            prz_base, _ = calcola_prezzo_strategico(f_in.day, f_in.month, f_in.year, STRUTTURE[f_str])
-            f_tot = st.number_input("Totale (€)", value=float(prz_base * (notti if notti > 0 else 1)))
-            f_acc = st.number_input("Acconto (€)", value=0.0)
-
-            if st.form_submit_button("CONFERMA PRENOTAZIONE"):
+            if st.form_submit_button("Salva"):
+                notti = (f_out - f_in).days
                 if notti <= 0: notti = 1
-                payload = []
-                for i in range(notti):
-                    g = (f_in + timedelta(days=i)).strftime("%Y-%m-%d")
-                    payload.append({
-                        "Data": g, "Struttura": f_str, "Nome": f_nom, "Tel": f_tel,
-                        "Note": f_not, "Prezzo_Totale": f_tot, "Acconto": f_acc, "Saldo": f_tot - f_acc
-                    })
-                if salva_prenotazione(payload):
-                    st.success("Sincronizzato!")
-                    st.rerun()
+                p_base, _ = calcola_prezzo_strategico(f_in.day, f_in.month, f_in.year, STRUTTURE[f_str])
+                payload = [{"Data": (f_in + timedelta(days=i)).strftime("%Y-%m-%d"), "Struttura": f_str, "Nome": f_nom, "Tel": "", "Note": f_not, "Prezzo_Totale": p_base*notti, "Acconto": 0, "Saldo": p_base*notti} for i in range(notti)]
+                if salva_prenotazione(payload): st.rerun()
 
-    with col_del:
+    with col_b:
         st.subheader("🗑️ Elimina")
         d_day = st.date_input("Giorno")
-        d_str = st.selectbox("Unità da liberare", list(STRUTTURE.keys()))
-        if st.button("ELIMINA PRENOTAZIONE", type="primary"):
-            if elimina_prenotazione(d_day.strftime("%Y-%m-%d"), d_str):
-                st.rerun()
-
-    # Visualizzazione Dati per controllo
-    with st.expander("Vedi Database"):
-        st.dataframe(df_p)
+        d_str = st.selectbox("Unità", list(STRUTTURE.keys()), key="del_s")
+        if st.button("Elimina"):
+            if elimina_prenotazione(d_day.strftime("%Y-%m-%d"), d_str): st.rerun()
 
 if __name__ == "__main__":
     main()
