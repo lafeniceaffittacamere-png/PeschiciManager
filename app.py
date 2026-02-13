@@ -89,54 +89,111 @@ def get_market_average(date_str):
         return int(sum(prezzi) / len(prezzi)) if prezzi else 95
     except: return 95
 
-# --- 5. CSS ---
+# --- 5. CSS RESPONSIVE (LA MAGIA PER IL CELLULARE) ---
 st.markdown("""
     <style>
+    /* STILE GENERALE */
     .stApp { background-color: #f1f8e9; }
-    .planning-container { overflow-x: auto; background: white; border: 1px solid #a5d6a7; border-radius: 8px; }
+    
+    /* TABELLA PLANNING */
+    .planning-container { 
+        overflow-x: auto; /* Permette di scorrere col dito */
+        background: white; 
+        border: 1px solid #a5d6a7; 
+        border-radius: 8px; 
+        -webkit-overflow-scrolling: touch; /* Scorrimento fluido su mobile */
+    }
+    
     table { border-collapse: separate; width: 100%; border-spacing: 0; }
-    th, td { padding: 4px; text-align: center; border: 1px solid #eee; min-width: 100px; height: 80px; vertical-align: middle; }
-    .sticky-col { position: sticky; left: 0; background: #2e7d32; color: white; font-weight: bold; min-width: 170px; z-index: 10; font-size: 11px; text-align: left; padding-left: 8px; }
-    .cell-booked { background: #ffcdd2 !important; color: #b71c1c !important; font-weight: bold; font-size: 11px; border-left: 6px solid #d32f2f !important; }
+    
+    /* CELLE STANDARD */
+    th, td { 
+        padding: 4px; 
+        text-align: center; 
+        border: 1px solid #eee; 
+        min-width: 90px; /* Larghezza minima su PC */
+        height: 70px; 
+        vertical-align: middle; 
+    }
+    
+    /* COLONNA FISSA (Nomi Strutture) */
+    .sticky-col { 
+        position: sticky; 
+        left: 0; 
+        background: #2e7d32; 
+        color: white; 
+        font-weight: bold; 
+        min-width: 160px; 
+        z-index: 10; 
+        font-size: 11px; 
+        text-align: left; 
+        padding-left: 8px; 
+        box-shadow: 2px 0 5px rgba(0,0,0,0.1); /* Ombra per staccarla */
+    }
+
+    /* STILI CELLE */
+    .cell-booked { background: #ffcdd2 !important; color: #b71c1c !important; font-weight: bold; font-size: 10px; border-left: 4px solid #d32f2f !important; }
     .cell-locked { background: #eeeeee !important; color: #bbb; font-style: italic; }
-    .ev-1 { color: #f57f17; font-weight: bold; font-size: 10px; line-height: 1; }
-    .ev-2 { color: #8e44ad; font-weight: bold; font-size: 10px; border-top: 1px dashed #ddd; }
+    .ev-1 { color: #f57f17; font-weight: bold; font-size: 9px; line-height: 1; }
+    .ev-2 { color: #8e44ad; font-weight: bold; font-size: 9px; border-top: 1px dashed #ddd; }
     .info-price { font-size: 13px; color: #1b5e20; font-weight: 800; display: block; }
     .info-market { font-size: 9px; color: #c62828; font-weight: bold; }
     header {visibility: hidden;}
+
+    /* --- ADATTAMENTI PER CELLULARE (HUAWEI/IPHONE) --- */
+    @media only screen and (max-width: 768px) {
+        th, td { 
+            min-width: 60px; /* Celle più strette su mobile */
+            font-size: 10px; /* Testo più piccolo */
+            height: 60px;
+        }
+        .sticky-col { 
+            min-width: 100px; /* Colonna nomi più compatta */
+            font-size: 10px; 
+            padding-left: 2px;
+        }
+        .info-price { font-size: 11px; }
+        .info-market { display: none; } /* Nascondiamo il prezzo mercato su mobile per pulizia */
+        h3 { font-size: 18px !important; }
+    }
     </style>
 """, unsafe_allow_html=True)
 
 # --- 6. MAIN UI ---
 def main():
-    st.markdown(f"<h3 style='text-align:center; color:#2e7d32;'>VICTORY RADAR PRO (Google Connected)</h3>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='text-align:center; color:#2e7d32;'>VICTORY RADAR PRO</h3>", unsafe_allow_html=True)
 
-    if st.button("🔄 AGGIORNA DATI"):
+    if st.button("🔄 AGGIORNA DATI (Clicca se non vedi modifiche)"):
         st.cache_data.clear()
         st.rerun()
 
-    n1, n2, n3 = st.columns([1, 8, 1])
-    if n1.button("◀"): st.session_state.mese -= 1; st.rerun()
-    n2.markdown(f"<h4 style='text-align:center;'>{calendar.month_name[st.session_state.mese].upper()} {st.session_state.anno}</h4>", unsafe_allow_html=True)
-    if n3.button("▶"): st.session_state.mese += 1; st.rerun()
+    # Navigazione Mesi
+    c1, c2, c3 = st.columns([1, 6, 1])
+    if c1.button("◀"): st.session_state.mese -= 1; st.rerun()
+    c2.markdown(f"<h4 style='text-align:center; margin:0;'>{calendar.month_name[st.session_state.mese].upper()} {st.session_state.anno}</h4>", unsafe_allow_html=True)
+    if c3.button("▶"): st.session_state.mese += 1; st.rerun()
 
     df_p = carica_prenotazioni()
     num_days = calendar.monthrange(st.session_state.anno, st.session_state.mese)[1]
 
-    # TABELLA PLANNING
+    # TABELLA PLANNING (Con Scorrimento Laterale)
     html = '<div class="planning-container"><table><thead><tr><th class="sticky-col">STRUTTURA</th>'
     for d in range(1, num_days + 1):
         dt_t = datetime(st.session_state.anno, st.session_state.mese, d)
         bg = "#c8e6c9" if dt_t.weekday() >= 5 else "#e8f5e9"
-        html += f'<th style="background:{bg}; font-size:11px;">{d}<br>{dt_t.strftime("%a")}</th>'
+        html += f'<th style="background:{bg}; font-size:10px;">{d}<br>{dt_t.strftime("%a")[0]}</th>' # Solo iniziali su mobile
     html += '</tr></thead><tbody>'
 
     # RADAR EVENTI
-    html += '<tr><td class="sticky-col" style="background:#fff9c4; color:#f57f17">📡 RADAR EVENTI</td>'
+    html += '<tr><td class="sticky-col" style="background:#fff9c4; color:#f57f17">📡 EVENTI</td>'
     for d in range(1, num_days + 1):
         _, evs = calcola_prezzo_strategico(d, st.session_state.mese, st.session_state.anno, {"base":100})
-        txt = "".join([f'<div class="ev-{i+1}">{ev["n"][:10]}</div>' for i, ev in enumerate(evs[:2])])
-        html += f'<td style="background:#fff9c4;">{txt}</td>'
+        # Su mobile mostriamo solo un pallino se c'è evento, su PC il nome
+        if evs:
+            txt = "".join([f'<div class="ev-{i+1}">{ev["n"][:8]}</div>' for i, ev in enumerate(evs[:1])])
+            html += f'<td style="background:#fff9c4;">{txt}</td>'
+        else:
+             html += f'<td style="background:#fff9c4;"></td>'
     html += '</tr>'
 
     for ns, info in STRUTTURE.items():
@@ -155,116 +212,108 @@ def main():
             if k in confl: 
                 html += '<td class="cell-locked">🔒</td>'
             elif not m.empty:
-                nome_c = str(m.iloc[0]["Nome"]).upper()[:9]
+                nome_c = str(m.iloc[0]["Nome"]).upper()[:6] # Accorcia nome su mobile
                 html += f'<td class="cell-booked">{nome_c}</td>'
             else:
                 prz, _ = calcola_prezzo_strategico(d, st.session_state.mese, st.session_state.anno, info)
-                mkt = st.session_state.market_prices.get(k, "---")
-                html += f'<td><span class="info-price">€{prz}</span><span class="info-market">M: {mkt}</span></td>'
+                mkt = st.session_state.market_prices.get(k, "")
+                mkt_html = f'<span class="info-market">M:{mkt}</span>' if mkt else ""
+                html += f'<td><span class="info-price">€{prz}</span>{mkt_html}</td>'
         html += '</tr>'
     html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
 
-    # AREA AZIONI
+    # AREA AZIONI (Su Mobile vanno in colonna automaticamente)
     st.markdown("<br>", unsafe_allow_html=True)
-    c_radar, c_book, c_del = st.columns(3)
     
-    with c_radar:
-        st.subheader("🚀 RADAR GOOGLE")
+    # Usiamo tabs per risparmiare spazio su mobile
+    tab1, tab2, tab3 = st.tabs(["📝 PRENOTA", "🗑️ ELIMINA", "🚀 RADAR GOOGLE"])
+    
+    with tab1:
+        with st.form("bk"):
+            c_a, c_b = st.columns(2)
+            with c_a: su = st.selectbox("Unità", list(STRUTTURE.keys()))
+            with c_b: nm = st.text_input("Nome Ospite")
+            
+            c_c, c_d = st.columns(2)
+            with c_c: b1 = st.date_input("Check-in")
+            with c_d: b2 = st.date_input("Check-out")
+            
+            tl = st.text_input("Telefono / Note")
+            
+            notti = (b2-b1).days if (b2-b1).days > 0 else 1
+            prz_s, _ = calcola_prezzo_strategico(b1.day, b1.month, st.session_state.anno, STRUTTURE[su])
+            
+            c_e, c_f = st.columns(2)
+            with c_e: pt = st.number_input("Totale (€)", value=float(prz_s * notti))
+            with c_f: ac = st.number_input("Acconto (€)", value=0.0)
+            
+            st.info(f"Saldo da incassare: **{pt-ac} €**")
+            
+            if st.form_submit_button("💾 SALVA PRENOTAZIONE", type="primary"):
+                nuove = []
+                for i in range(notti):
+                    g = (b1 + timedelta(days=i)).strftime("%Y-%m-%d")
+                    nuove.append({"Data": g, "Struttura": su, "Nome": nm, "Tel": tl, "Note": "", "Prezzo_Totale": pt, "Acconto": ac, "Saldo": pt-ac})
+                
+                if invia_al_cloud(nuove): 
+                    with st.spinner("Salvataggio..."):
+                        time.sleep(3) 
+                        st.cache_data.clear()
+                    st.success("Fatto!")
+                    st.rerun()
+
+    with tab2:
+        st.write("### Cancellazione Rapida")
+        # Logica raggruppamento (Identica a prima)
+        if not df_p.empty and 'Data' in df_p.columns and 'Nome' in df_p.columns:
+            df_view = df_p.sort_values(by=['Struttura', 'Data'])
+            gruppi = {}
+            for _, row in df_view.iterrows():
+                key = f"{row['Nome']} - {row['Struttura']}"
+                if key not in gruppi: gruppi[key] = []
+                gruppi[key].append(row['Data'])
+            
+            opzioni_menu = []
+            mappa_date = {} 
+            for key, date_list in gruppi.items():
+                date_list.sort()
+                label = f"{key} ({len(date_list)} notti)"
+                opzioni_menu.append(label)
+                nome, struttura = key.split(" - ")
+                mappa_date[label] = {"struttura": struttura, "date": date_list}
+            
+            if opzioni_menu:
+                scelta = st.selectbox("Seleziona gruppo:", opzioni_menu)
+                if st.button("❌ ELIMINA GRUPPO", type="primary"):
+                    dati = mappa_date[scelta]
+                    progresso = st.progress(0)
+                    for i, giorno in enumerate(dati["date"]):
+                        invia_al_cloud({"action": "DELETE", "date": giorno, "structure": dati["struttura"]})
+                        progresso.progress((i + 1) / len(dati["date"]))
+                        time.sleep(0.3)
+                    st.success("Cancellato!")
+                    time.sleep(1); st.cache_data.clear(); st.rerun()
+            else:
+                st.info("Nessuna prenotazione.")
+        else:
+            st.info("Lista vuota.")
+
+    with tab3:
+        st.write("Scansiona prezzi competitor")
         scan_start = st.date_input("Dal", value=datetime(st.session_state.anno, st.session_state.mese, 1))
         scan_end = st.date_input("Al", value=datetime(st.session_state.anno, st.session_state.mese, 1) + timedelta(days=6))
-        
-        if st.button("SCANSIONA PREZZI"):
-            with st.spinner(f"Analisi mercato dal {scan_start} al {scan_end}..."):
+        if st.button("🔎 AVVIA SCANSIONE"):
+            with st.spinner("Analisi in corso..."):
                 delta = (scan_end - scan_start).days
                 for i in range(delta + 1):
                     giorno = scan_start + timedelta(days=i)
                     ds = giorno.strftime("%Y-%m-%d")
                     st.session_state.market_prices[ds] = get_market_average(ds)
-                st.success("Scansione Completata!")
                 st.rerun()
 
-    with c_book:
-        with st.form("bk"):
-            st.subheader("📝 PRENOTA")
-            su = st.selectbox("Unità", list(STRUTTURE.keys())); b1 = st.date_input("In"); b2 = st.date_input("Out")
-            nm = st.text_input("Nome"); tl = st.text_input("Tel"); nt = st.text_input("Note")
-            notti = (b2-b1).days if (b2-b1).days > 0 else 1
-            prz_s, _ = calcola_prezzo_strategico(b1.day, b1.month, st.session_state.anno, STRUTTURE[su])
-            pt = st.number_input("Totale", value=float(prz_s * notti)); ac = st.number_input("Acconto", value=0.0)
-            st.write(f"Saldo: {pt-ac} €")
-            if st.form_submit_button("SALVA PRENOTAZIONE"):
-                nuove = []
-                for i in range(notti):
-                    g = (b1 + timedelta(days=i)).strftime("%Y-%m-%d")
-                    nuove.append({"Data": g, "Struttura": su, "Nome": nm, "Tel": tl, "Note": nt, "Prezzo_Totale": pt, "Acconto": ac, "Saldo": pt-ac})
-                
-                if invia_al_cloud(nuove): 
-                    with st.spinner("Sincronizzazione Cloud... (3s)"):
-                        time.sleep(3) 
-                        st.cache_data.clear()
-                    st.success("✅ Salvato!")
-                    st.rerun()
-
-    with c_del:
-        st.subheader("🗑️ ELIMINA")
-        
-        # --- RAGGRUPPAMENTO PRENOTAZIONI PER CANCELLAZIONE RAPIDA ---
-        if not df_p.empty and 'Data' in df_p.columns and 'Nome' in df_p.columns:
-            # 1. Filtriamo solo le prenotazioni future o del mese corrente
-            df_view = df_p.sort_values(by=['Struttura', 'Data'])
-            
-            # 2. Creiamo un dizionario per raggruppare: Chiave = Nome+Struttura
-            gruppi = {}
-            for _, row in df_view.iterrows():
-                key = f"{row['Nome']} - {row['Struttura']}"
-                if key not in gruppi:
-                    gruppi[key] = []
-                gruppi[key].append(row['Data'])
-            
-            # 3. Creiamo le opzioni del menu: "Nome - Struttura (Dal... Al...)"
-            opzioni_menu = []
-            # Mappa per recuperare le date dalla scelta dell'utente
-            mappa_date = {} 
-            
-            for key, date_list in gruppi.items():
-                date_list.sort()
-                start = date_list[0]
-                end = date_list[-1]
-                label = f"{key} | Dal {start} al {end} ({len(date_list)} notti)"
-                opzioni_menu.append(label)
-                # Salviamo struttura e lista date per l'eliminazione
-                nome, struttura = key.split(" - ")
-                mappa_date[label] = {"struttura": struttura, "date": date_list}
-            
-            if opzioni_menu:
-                scelta = st.selectbox("Seleziona il gruppo da cancellare:", opzioni_menu)
-                
-                if st.button("ELIMINA PRENOTAZIONE COMPLETA", type="primary"):
-                    dati_da_canc = mappa_date[scelta]
-                    struttura_target = dati_da_canc["struttura"]
-                    lista_date = dati_da_canc["date"]
-                    
-                    # Barra di progresso
-                    progresso = st.progress(0)
-                    totale = len(lista_date)
-                    
-                    for i, giorno in enumerate(lista_date):
-                        # Chiama il server per ogni singolo giorno
-                        invia_al_cloud({"action": "DELETE", "date": giorno, "structure": struttura_target})
-                        progresso.progress((i + 1) / totale)
-                        time.sleep(0.5) # Piccolo respiro per non intasare Google
-                    
-                    st.success(f"✅ Cancellate {totale} notti con successo!")
-                    time.sleep(1)
-                    st.cache_data.clear()
-                    st.rerun()
-            else:
-                st.info("Nessuna prenotazione trovata.")
-        else:
-            st.info("Nessun dato disponibile.")
-
-    with st.expander("🔍 DEBUG: DATI NEL CLOUD"):
+    # DEBUG FINALE (Nascosto di default)
+    with st.expander("Debug Dati"):
         st.dataframe(df_p)
 
 if __name__ == "__main__": main()
