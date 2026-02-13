@@ -10,14 +10,9 @@ import time
 st.set_page_config(page_title="Victory Radar Peschici ULTIMATE", layout="wide")
 
 # --- 2. COSTANTI DI CONNESSIONE ---
-# Script per SCRIVERE ed ELIMINARE
 URL_SCRIPT_GOOGLE = "https://script.google.com/macros/s/AKfycby0mE0ltg7MMQlwUb-jPmLuuUD-raHRLLV1vW7wJjk8VpJZIftWZ-M8Beuvwkrf5cROKA/exec"
-
-# Link per LEGGERE (Anti-Cache)
 SHEET_ID = "1I34jTQs-qVlwqkoeUsXpHhzNBiZTLwvAVjmmjs_My-o"
 URL_LETTURA_DIRETTA = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Prenotazioni"
-
-# API Key per Google Hotels
 API_KEY = "1eefd886de298c71a9832a62837c0adb7ddc471ee28ded6ce24d9682f39c4ee1" 
 
 # --- 3. INIZIALIZZAZIONE ---
@@ -87,7 +82,6 @@ def calcola_prezzo_strategico(giorno, mese, anno, info):
     return int(info['base'] * molt), ev_oggi
 
 def get_market_average(date_str):
-    # Logica SerpApi
     params = {"engine": "google_hotels", "q": "hotel peschici foggia", "check_in_date": date_str, "api_key": API_KEY}
     try:
         res = requests.get("https://serpapi.com/search", params=params, timeout=5).json()
@@ -177,7 +171,6 @@ def main():
     
     with c_radar:
         st.subheader("🚀 RADAR GOOGLE")
-        # RIPRISTINATE LE DATE DI SCANSIONE COME RICHIESTO
         scan_start = st.date_input("Dal", value=datetime(st.session_state.anno, st.session_state.mese, 1))
         scan_end = st.date_input("Al", value=datetime(st.session_state.anno, st.session_state.mese, 1) + timedelta(days=6))
         
@@ -215,14 +208,38 @@ def main():
 
     with c_del:
         st.subheader("🗑️ ELIMINA")
-        d_d = st.date_input("Giorno"); d_s = st.selectbox("Unità da liberare", list(STRUTTURE.keys()), key="del_s")
-        if st.button("ELIMINA PRENOTAZIONE", type="primary"):
-            if invia_al_cloud({"action": "DELETE", "date": d_d.strftime("%Y-%m-%d"), "structure": d_s}):
-                with st.spinner("Cancellazione Cloud... (3s)"):
-                    time.sleep(3)
-                    st.cache_data.clear()
-                st.success("✅ Cancellato!")
-                st.rerun()
+        
+        # --- NUOVA SEZIONE: LISTA INTELLIGENTE ---
+        # Filtriamo le prenotazioni del mese corrente per mostrarle nella lista
+        prenotazioni_mese = pd.DataFrame()
+        if not df_p.empty and 'Data' in df_p.columns:
+            mask = df_p['Data'].str.contains(f"{st.session_state.anno}-{st.session_state.mese:02d}")
+            prenotazioni_mese = df_p[mask].sort_values(by="Data")
+        
+        if not prenotazioni_mese.empty:
+            # Creiamo una lista di stringhe leggibili "DATA | STRUTTURA | OSPITE"
+            opzioni_cancellazione = []
+            for idx, row in prenotazioni_mese.iterrows():
+                label = f"{row['Data']} | {row['Struttura']} | {row['Nome']}"
+                opzioni_cancellazione.append(label)
+            
+            # Selectbox per scegliere COSA cancellare
+            selezione = st.selectbox("Scegli prenotazione da cancellare:", opzioni_cancellazione)
+            
+            if st.button("ELIMINA SELEZIONATA", type="primary"):
+                # Estrarre i dati dalla stringa selezionata
+                parti = selezione.split(" | ")
+                data_da_canc = parti[0]
+                struttura_da_canc = parti[1]
+                
+                if invia_al_cloud({"action": "DELETE", "date": data_da_canc, "structure": struttura_da_canc}):
+                    with st.spinner("Cancellazione Cloud... (3s)"):
+                        time.sleep(3)
+                        st.cache_data.clear()
+                    st.success("✅ Cancellato!")
+                    st.rerun()
+        else:
+            st.info("Nessuna prenotazione in questo mese.")
 
     with st.expander("🔍 DEBUG: DATI NEL CLOUD"):
         st.dataframe(df_p)
