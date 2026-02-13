@@ -38,7 +38,7 @@ STRUTTURE = {
 PARENT_UNIT = "Il Melograno (VILLA)"
 CHILD_UNITS = ["Il Melograno (SUITE)", "Il Melograno (FAMILY)"]
 
-# --- CALENDARIO EVENTI COMPLETO (MIX 2026 + STORICI) ---
+# --- CALENDARIO EVENTI COMPLETO (TUTTI GLI EVENTI) ---
 EVENTI_BASE = [
     # PRIMAVERA
     {"m": 4, "s": 4,  "e": 6,  "n": "PASQUA 2026", "w": 1.8},
@@ -50,16 +50,17 @@ EVENTI_BASE = [
     {"m": 6, "s": 13, "e": 14, "n": "S.ANTONIO", "w": 1.3},
     {"m": 6, "s": 20, "e": 21, "n": "TRIATHLON", "w": 1.5},
     
-    # LUGLIO
-    {"m": 7, "s": 4,  "e": 5,  "n": "ZAIANA OPEN / NOTTE ROSA", "w": 1.6}, # Eventi inizio luglio
+    # LUGLIO (Esempio sovrapposizione: Notte Rosa + Zaiana Open)
+    {"m": 7, "s": 4,  "e": 5,  "n": "NOTTE ROSA", "w": 1.6},
+    {"m": 7, "s": 4,  "e": 5,  "n": "ZAIANA OPEN", "w": 1.6},
     {"m": 7, "s": 11, "e": 12, "n": "FESTA DEL MARE", "w": 1.4},
-    {"m": 7, "s": 19, "e": 21, "n": "SANT'ELIA (PATRONO)", "w": 2.5}, # IMPERDIBILE
+    {"m": 7, "s": 19, "e": 21, "n": "SANT'ELIA (PATRONO)", "w": 2.5},
     
     # AGOSTO
     {"m": 8, "s": 1,  "e": 5,  "n": "CARPINO FOLK", "w": 1.4},
-    {"m": 8, "s": 8,  "e": 22, "n": "GOLD WEEK", "w": 2.8}, # Settimana d'oro centrale
+    {"m": 8, "s": 8,  "e": 22, "n": "GOLD WEEK", "w": 2.8}, 
     {"m": 8, "s": 10, "e": 11, "n": "CALICI DI STELLE", "w": 1.5},
-    {"m": 8, "s": 14, "e": 16, "n": "FERRAGOSTO", "w": 3.0}, # PICCO ASSOLUTO
+    {"m": 8, "s": 14, "e": 16, "n": "FERRAGOSTO", "w": 3.0},
     {"m": 8, "s": 24, "e": 28, "n": "PESCHICI JAZZ", "w": 1.5},
     
     # SETTEMBRE
@@ -157,8 +158,11 @@ st.markdown("""
     /* STATI CELLE */
     .cell-booked { background: #ffcdd2 !important; color: #b71c1c !important; font-weight: bold; font-size: 10px; border-left: 4px solid #d32f2f !important; }
     .cell-locked { background: #eeeeee !important; color: #bbb; font-style: italic; }
-    .ev-1 { color: #f57f17; font-weight: bold; font-size: 9px; line-height: 1; }
-    .ev-2 { color: #8e44ad; font-weight: bold; font-size: 9px; border-top: 1px dashed #ddd; }
+    
+    /* CLASSI PER EVENTI MULTIPLI */
+    .ev-1 { color: #f57f17; font-weight: bold; font-size: 9px; line-height: 1.1; margin-bottom: 2px; }
+    .ev-2 { color: #8e44ad; font-weight: bold; font-size: 9px; line-height: 1.1; border-top: 1px dashed #ccc; padding-top: 1px; }
+    
     .info-price { font-size: 13px; color: #1b5e20; font-weight: 800; display: block; }
     .info-market { font-size: 9px; color: #c62828; font-weight: bold; }
     header {visibility: hidden;}
@@ -182,7 +186,7 @@ def main():
         st.cache_data.clear()
         st.rerun()
 
-    # --- NAVIGAZIONE MESI (FIXATA) ---
+    # --- NAVIGAZIONE MESI ---
     c1, c2, c3 = st.columns([1, 6, 1])
     
     if c1.button("◀"): 
@@ -210,13 +214,17 @@ def main():
         html += f'<th style="background:{bg}; font-size:10px;">{d}<br>{dt_t.strftime("%a")[0]}</th>'
     html += '</tr></thead><tbody>'
 
-    # RIGA EVENTI
+    # RIGA EVENTI (MODIFICATA: MOSTRA TUTTI GLI EVENTI)
     html += '<tr><td class="sticky-col" style="background:#fff9c4; color:#f57f17">📡 EVENTI</td>'
     for d in range(1, num_days + 1):
         _, evs = calcola_prezzo_strategico(d, st.session_state.mese, st.session_state.anno, {"base":100})
         if evs:
-            # Su mobile mostriamo solo la prima parola per non spaccare la tabella
-            txt = "".join([f'<div class="ev-{i+1}">{ev["n"][:8]}</div>' for i, ev in enumerate(evs[:1])])
+            # Qui costruiamo il contenuto della cella mostrando TUTTI gli eventi
+            # Il primo avrà classe ev-1 (arancione), il secondo ev-2 (viola)
+            txt = ""
+            for i, ev in enumerate(evs):
+                cls = "ev-1" if i == 0 else "ev-2"
+                txt += f'<div class="{cls}">{ev["n"][:10]}</div>'
             html += f'<td style="background:#fff9c4;">{txt}</td>'
         else:
              html += f'<td style="background:#fff9c4;"></td>'
@@ -289,10 +297,7 @@ def main():
     with tab2:
         st.write("### Cancellazione Intelligente")
         if not df_p.empty and 'Data' in df_p.columns and 'Nome' in df_p.columns:
-            # Ordiniamo per data
             df_view = df_p.sort_values(by=['Struttura', 'Data'])
-            
-            # Logica raggruppamento
             gruppi = {}
             for _, row in df_view.iterrows():
                 key = f"{row['Nome']} - {row['Struttura']}"
